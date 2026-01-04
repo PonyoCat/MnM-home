@@ -2,16 +2,20 @@
 
 ### Read This First
 
-**IMPORTANT:** Always read `.claude/project_context.md` when relaunched to understand the current state, known issues, and active development phase.
+**IMPORTANT:** If `.claude/project_context.md` exists, read it first for current state and known issues. It is not present in this repo right now.
 
-**Primary Documentation:**
-- **[README.md](README.md)** - **START HERE!** Complete project overview, architecture, all 15 core components, API documentation, code examples, and getting started guide
-- **[CHANGELOG.md](CHANGELOG.md)** - Detailed history of fixes, learnings, and breakthroughs (Nov 5-17, 2025) - 27 entries with implementation decisions and key lessons
-- **[.claude/project_context.md](.claude/project_context.md)** - **Current project state** - Read this when relaunched! Contains performance metrics (84.6% accuracy), known issues, active development status
-- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Azure deployment guide and CI/CD setup (Docker, Azure Web App, GitHub Actions)
+**Primary Documentation (current repo):**
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current implementation status and next steps
+- **[INITIAL.md](INITIAL.md)** - Original feature request and goals
+- **[PRPs/league-dashboard.md](PRPs/league-dashboard.md)** - Full spec, implementation blueprint, and validation steps
+- **[PRPs/frontend-shadcn-completion.md](PRPs/frontend-shadcn-completion.md)** - Frontend completion guide
+- **[backend/README.md](backend/README.md)** - Backend setup and API summary
+- **[COMPLETION_SUMMARY.md](COMPLETION_SUMMARY.md)** - High-level completion notes
 
 **Specialized Documentation:**
-Documentation specialized for parts of the app like how to optimize docker deployment.
+- **[PRPs/templates/prp_base.md](PRPs/templates/prp_base.md)** - PRP template
+- **[.claude/commands/execute-prp.md](.claude/commands/execute-prp.md)** - PRP execution command
+- **[.claude/commands/generate-prp.md](.claude/commands/generate-prp.md)** - PRP generation command
 
 
 
@@ -20,58 +24,55 @@ Documentation specialized for parts of the app like how to optimize docker deplo
 ### How to work with this codebase
 
 #### Development Workflow
- 
+
+**Environment:**
+- **Operating System**: Windows 11
+- **Shell**: PowerShell (use PowerShell commands, NOT bash)
+- **Python**: 3.13
+- **Node.js**: 18+
+
 **Before Making Changes:**
-1. Read `.claude/project_context.md` for current state and active issues
-2. Check `CHANGELOG.md` for similar past issues and their solutions
-3. Review `README.md` for architecture and API details
- 
+1. Read `PROJECT_STATUS.md` and `INITIAL.md` for current state and goals
+2. Review `PRPs/league-dashboard.md` for architecture, API contracts, and remaining tasks
+3. Check `backend/README.md` for backend setup and environment requirements
+
 **For Specific Tasks:**
-- **Architecture questions** → README.md (authoritative source for all 15 components)
-- **Similar past issues** → CHANGELOG.md (search for similar problems and solutions)
-- **Azure Deployment** → **docs/azure-deployment-best-practices.md (MUST READ BEFORE ANY DEPLOYMENT - prevents deploying stale Docker images)**
-- **Azure CI/CD Setup** → DEPLOYMENT.md (step-by-step Azure deployment guide)
-- **Pipeline 2.0** → PIPELINE_2.0_VISUAL_FEW_SHOT_ARCHITECTURE.md (complete implementation)
-- **Corrections** → docs/correction_system_guide.md (Excel-based workflow)
- 
+- **Architecture questions**: `PRPs/league-dashboard.md`, `PROJECT_STATUS.md`
+- **Backend setup**: `backend/README.md`, `backend/.env.example`
+- **Frontend setup**: `frontend/README.md`, `frontend/.env.example`
+- **PRP execution**: `.claude/commands/execute-prp.md`
+- **PRP generation**: `.claude/commands/generate-prp.md`
+
 #### Development Standards & Best Practices
  
 **From User's Global Instructions (MUST FOLLOW):**
 - **Minimize new files**: Always add changes to existing files - minimize creating new temporary files or scripts
 - **No emoji in code**: Never use emoji characters when generating documents or code
-- **Document learnings**: Always update CLAUDE.md when making significant findings or progress in the project
+- **Update CLAUDE.md**: Record significant findings or progress here
 - **Clean project structure**: If making a temporary file or script, remove it after use - maintain clean structured projects
-- **Write fixes to CHANGELOG**: Always document learnings from fixes in CHANGELOG.md (not in CLAUDE.md "Recent Fixes" section anymore)
+- **Document learnings**: Update `PROJECT_STATUS.md` or `COMPLETION_SUMMARY.md` when fixes change status or behavior
 - **Move PRPs to implemented, after run**: After successfully implementing a PRP, move it to subfolder implemented.
  
 **Project Awareness & Context**
-- **Before starting work**: Read README.md (architecture, all 15 components), .claude/project_context.md (current state, metrics, known issues), CHANGELOG.md (past solutions and learnings)
-- **Understanding system state**: Check current accuracy (84.6%), known issues (OrientationAgent 56.2%), active features (Pipeline 2.0, visual few-shot learning)
-- **Verify first, code second**: Always confirm file paths exist, modules are imported correctly, and dependencies are available
- 
+- **Before starting work**: Read `PROJECT_STATUS.md` and `INITIAL.md` for state and goals, then `PRPs/league-dashboard.md` for the full spec
+- **Understanding system state**: Backend and frontend are implemented; database config and deployment are pending (see `PROJECT_STATUS.md`)
+- **Verify first, code second**: Confirm file paths, imports, and env vars before changes
+
 **Code Structure & Modularity**
-- **Target**: 500 lines for NEW files/features (pragmatic guideline, not strict enforcement)
-- **Current reality**: Some stable modules exceed this (agent.py: 1,176 lines, ocr_cross_validator.py: 1,028 lines) - that's OK
-- **When to split**: Adding unrelated features, file becomes hard to navigate, or approaching 1,000+ lines
-- **Module organization**: Group by feature/responsibility (e.g., agent.py + models.py + prompts.py for each agent)
-- **Imports**: Use clear, consistent imports (prefer relative imports within packages)
- 
+- **Backend layout**: `backend/app` holds the FastAPI app, models, schemas, CRUD, and routers
+- **Frontend layout**: `frontend/src` holds App, components, UI primitives, and the API client
+- **Imports**: Use relative imports inside the backend package; use `@/` alias in the frontend
+
 **Testing & Reliability**
-- **Test location**: tests/ directory using pytest
-- **When to test**: Recommended for new features, especially critical business logic (extraction, validation, API endpoints)
-- **Policy**: Encouraged but optional - not blocking for development
-- **Existing validation**: Leverage validator.py (5%/10m² tolerance), ocr_cross_validator.py (hallucination detection)
-- **Test coverage**: At least 1 expected case, 1 edge case, 1 failure case when writing tests
- 
+- **Automated tests**: None in the repo currently
+- **Manual validation**: Use FastAPI `/docs` and the frontend UI; use `npm run build` for a TypeScript check
+- **Database checks**: Run `python test_connection.py` to verify Neon connection, then `python init_db.py` after setting `DATABASE_URL`
+- **PowerShell commands**: Use `.\venv\Scripts\Activate.ps1` to activate virtual environment
+
 **Task Completion & Tracking**
-- **Tool**: Use TodoWrite for multi-step tasks (flexible approach - whatever works best)
-- **Documentation updates**:
-  - CHANGELOG.md: Document fixes and learnings with root cause, solution, and key lessons
-  - README.md: Update when architecture changes, new components added, or API endpoints modified
-  - .claude/project_context.md: Update current state, metrics, and known issues
-- **Definition of done**: Works locally, tests pass (if written), documentation updated, Azure deployment verified (if production change)
-- **CRITICAL FOR AZURE DEPLOYMENTS**: ALWAYS read docs/azure-deployment-best-practices.md BEFORE building Docker images or deploying to Azure Web App
- 
+- **Documentation updates**: Update `PROJECT_STATUS.md` when status changes; update PRPs when scope shifts
+- **Definition of done**: Backend and frontend run locally, endpoints respond, and data persists
+
 **Style & Conventions**
 - **Python**: Follow PEP 8, use type hints, descriptive variable names (Danish terms OK: sagsnummer, planloesning, koekken_alrum)
 - **FastAPI**: Use Pydantic models for validation, write docstrings, leverage dependency injection, handle CORS properly
@@ -91,88 +92,217 @@ Documentation specialized for parts of the app like how to optimize docker deplo
 #### Important Project Context
 
 **Current System State:**
+- Backend and frontend are implemented
+- Database is configured and connected to Neon PostgreSQL (verified working)
+- Deployment is pending
+- Status details are tracked in `PROJECT_STATUS.md`
 
 **Tech Stack:**
+- FastAPI, SQLAlchemy (async), asyncpg, PostgreSQL (Neon)
+- React, Vite, TypeScript, Tailwind CSS, Radix UI
 
 **Key Features:**
+- Session review notes
+- Weekly champions checklist
+- Draft notes
+- First-pick stats with win/loss tracking
 
-**Known Issues (Check `.claude/project_context.md` for updates):**
+**Known Issues:**
+- `backend/.env` contains a placeholder `DATABASE_URL` until Neon credentials are set
+- Production CORS will need explicit frontend origins (see `backend/app/main.py`)
+- `frontend/src/components/PickStats.tsx` multiplies `win_rate` by 100 although the backend already returns a percent
 
 ---
  
 ## SECTION 2: TECHNICAL REFERENCE
- 
-**NOTE:** For complete architecture, API documentation, and code examples, see [README.md](README.md) as the authoritative source. This section provides Claude-specific technical notes and implementation details.
- 
+
+**NOTE:** Root `README.md` and `CHANGELOG.md` are not present in this repo. Use `PROJECT_STATUS.md` and the PRPs as the source of truth.
+
 ---
 
 ## Project Overview
-An overview of the project. Keep it technical and focused on development.
+League Dashboard is a small full-stack web app for a five-player League of Legends team. The React (Vite) frontend provides four dashboards, and the FastAPI backend persists shared data in PostgreSQL (Neon).
 
 ## Architecture
-The complete Architecture of the project.
+**Backend**: FastAPI app in `backend/app/main.py` with CORS enabled and feature routers mounted from `backend/app/routers/`. Database connectivity uses async SQLAlchemy in `backend/app/database.py`, with ORM models in `backend/app/models.py` and Pydantic schemas in `backend/app/schemas.py`. CRUD logic lives in `backend/app/crud.py`.
+
+**Frontend**: Vite React app in `frontend/` using Tailwind for styling. `frontend/src/App.tsx` lays out the four feature cards. Each feature component (`SessionReview`, `WeeklyChampions`, `DraftNotes`, `PickStats`) calls the API client in `frontend/src/lib/api.ts`. Shared UI primitives live under `frontend/src/components/ui/`.
+
+**Database**: PostgreSQL with tables created by `backend/init_db.py`, which also seeds initial session review and draft note rows.
 
 ### Core Components
-Core components of the project.
+- Backend API: routers, CRUD, models, and schemas under `backend/app/`
+- Frontend UI: feature components and UI primitives under `frontend/src/`
+- Planning docs: PRPs under `PRPs/` and status updates in `PROJECT_STATUS.md`
+- CLI helpers: PRP commands under `.claude/commands/`
 
 ### Data Flow
-Insert the flow of the program, describe the pipeline that the data moves through.
+1. User interacts with React components in `frontend/src/components/`.
+2. Components call `frontend/src/lib/api.ts`, which reads `VITE_API_URL`.
+3. FastAPI routers call CRUD functions using async SQLAlchemy sessions.
+4. PostgreSQL persists and returns data to the client.
 
-Insert file tree for the project.
-In case in code block ``` like this ```
+### Repository Tree (key files)
+```text
+MnM-home/
+  .claude/
+    commands/
+      execute-prp.md
+      generate-prp.md
+      ultimate_validate_command.md
+    settings.local.json
+  backend/
+    app/
+      __init__.py
+      main.py
+      database.py
+      models.py
+      schemas.py
+      crud.py
+      routers/
+        __init__.py
+        session_review.py
+        weekly_champions.py
+        draft_notes.py
+        pick_stats.py
+    init_db.py
+    requirements.txt
+    README.md
+    .env.example
+  frontend/
+    src/
+      App.tsx
+      App.css
+      main.tsx
+      index.css
+      lib/
+        api.ts
+        utils.ts
+      types/
+        api.types.ts
+      components/
+        SessionReview.tsx
+        WeeklyChampions.tsx
+        DraftNotes.tsx
+        PickStats.tsx
+        ui/
+          button.tsx
+          card.tsx
+          checkbox.tsx
+          input.tsx
+          textarea.tsx
+          table.tsx
+    public/
+      vite.svg
+    index.html
+    package.json
+    eslint.config.js
+    vite.config.ts
+    tailwind.config.js
+    postcss.config.js
+    tsconfig.json
+    tsconfig.app.json
+    tsconfig.node.json
+    .env.example
+    .env.local
+  PRPs/
+    league-dashboard.md
+    frontend-shadcn-completion.md
+    keep-alive-service.md
+    templates/
+      prp_base.md
+    EXAMPLE_multi_agent_prp.md
+  PROJECT_STATUS.md
+  INITIAL.md
+  COMPLETION_SUMMARY.md
+  CLAUDE.md
+  CLAUDE-example.md
+```
 
 ## Key Commands
-Use code blocks for the text
+Use code blocks for the text.
 
 ### Setup
-Setup for running the project
+```bash
+# Backend
+cd backend
+python -m venv venv
+venv\Scriptsctivate  # Windows
+pip install -r requirements.txt
+# Set DATABASE_URL in backend/.env (see backend/.env.example)
+
+# Frontend
+cd frontend
+npm install
+```
 
 ### Development
-Start a test instance of the project
+```bash
+# Backend
+cd backend
+python init_db.py
+uvicorn app.main:app --reload
+
+# Frontend
+cd frontend
+npm run dev
+```
 
 ### Testing
-Run tests on the project
+```bash
+# Backend API docs
+# http://localhost:8000/docs
+
+# Frontend typecheck + build
+cd frontend
+npm run build
+```
 
 ## API Endpoints
-A list of API endpoints with params that we can use.
+- `GET /api/session-review`
+- `PUT /api/session-review`
+- `GET /api/weekly-champions?week_start=YYYY-MM-DD`
+- `POST /api/weekly-champions`
+- `GET /api/draft-notes`
+- `PUT /api/draft-notes`
+- `GET /api/pick-stats`
+- `POST /api/pick-stats`
+- `PATCH /api/pick-stats/{id}/win`
+- `PATCH /api/pick-stats/{id}/loss`
+- `DELETE /api/pick-stats/{id}`
 
 ## Important Implementation Details
+- `DATABASE_URL` must use the async driver scheme (`postgresql+asyncpg://`).
+- `backend/init_db.py` creates tables and seeds one session review and one draft note row.
+- CORS is configured in `backend/app/main.py` for localhost; production origins should be explicit.
+- `WeeklyChampions.tsx` uses hardcoded player/champion lists and computes the current week start on Monday.
+- `PickStats.tsx` sorts by `win_rate`; the backend already returns `win_rate` as a percent value.
 
-### Feature 1
-
-### Documentation Hierarchy
- 
+## Documentation Hierarchy
 ```
-Idea → future_features/ → PRP (PRPs/) → Implementation → CHANGELOG.md
+Idea/requirements -> INITIAL.md
+Plan/spec        -> PRPs/league-dashboard.md, PRPs/frontend-shadcn-completion.md
+Implementation   -> backend/, frontend/
+Status           -> PROJECT_STATUS.md, COMPLETION_SUMMARY.md
 ```
- 
-1. **Idea Stage**: Create brief doc in `future_features/`
-2. **Planning Stage**: Create detailed PRP in `PRPs/` when ready for implementation
-3. **Implementation**: Follow PRP blueprint, document progress
-4. **Completion**: Document learnings and outcomes in `CHANGELOG.md`
 
 ## File Organization
- 
-**For complete project structure, see [README.md#project-structure](README.md#project-structure).**
+- `backend/` houses the FastAPI service and DB models.
+- `frontend/` houses the Vite React app and UI components.
+- `PRPs/` holds planning documents and templates.
+- `.claude/` holds command helpers for PRP workflows.
 
-### Best Practices
- 
-- **Keep future_features/ lightweight**: 1-2 pages max, focus on "what" and "why"
-- **Make PRPs comprehensive**: Include pseudocode, validation, edge cases
-- **Update PRPs during implementation**: Add learnings, adjust plan as needed
-- **Archive completed PRPs**: Move to `docs/archive/` or reference in CHANGELOG.md
-- **Cross-reference**: Link PRPs to related future_features docs for context
- 
 ## Environment Variables
-
+- `backend/.env`: `DATABASE_URL` for the PostgreSQL connection string
+- `frontend/.env.local`: `VITE_API_URL` for the backend base URL
 
 ---
- 
-## 📖 Additional Resources
- 
-- **README.md** - Complete project documentation (AUTHORITATIVE SOURCE)
-- **CHANGELOG.md** - Detailed history with 27 entries (Nov 5-17, 2025)
-- **.claude/project_context.md** - Current state and metrics
-- **DEPLOYMENT.md** - Azure deployment instructions
-- **PIPELINE_2.0_VISUAL_FEW_SHOT_ARCHITECTURE.md** - Complete Pipeline 2.0 guide
-- **docs/correction_system_guide.md** - Excel-based correction system
+
+## Additional Resources
+- `PROJECT_STATUS.md` - project status and remaining tasks
+- `PRPs/league-dashboard.md` - full specification and validation steps
+- `PRPs/frontend-shadcn-completion.md` - focused frontend completion guide
+- `backend/README.md` - backend setup guide and endpoint summary
+- `COMPLETION_SUMMARY.md` - implementation notes
+- `.claude/commands/execute-prp.md` - PRP execution helper
+- `PRPs/templates/prp_base.md` - PRP template

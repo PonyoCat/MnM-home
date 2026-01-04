@@ -1,6 +1,15 @@
 ## FEATURE:
 
-[Insert your feature here]
+Lets split the website into 2 different sites.
+You should have a home tab where there is
+- Weekly games (Formerly Weekly Champions)
+- Weekly message
+
+Then there should be a scrim tab where
+- Session review
+- Draft notes
+- Pick Statistics
+
 
 ## EXAMPLES:
 
@@ -13,8 +22,3 @@
 ## OTHER CONSIDERATIONS:
 
 [Any other considerations or specific requirements - great place to include gotchas that you see AI coding assistants miss with your projects a lot]
-
-## Cleanup
-
-Remove the files:
-README

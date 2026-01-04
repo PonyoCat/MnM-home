@@ -1,0 +1,10 @@
+# Claude
+.claude/
+CLAUDE*.md
+COMPLETION_SUMMARY.md
+
+# PRPs
+PRPs/
+
+# Initial
+INITIAL*.md
