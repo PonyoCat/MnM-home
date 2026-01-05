@@ -57,7 +57,8 @@
       "Bash(Select-String -Path \"frontend\\\\src\\\\App.tsx\", \"frontend\\\\index.html\", \"backend\\\\app\\\\main.py\", \"README.md\", \"PROJECT_STATUS.md\", \"backend\\\\README.md\" -Pattern \"League Dashboard\" -CaseSensitive)",
       "Bash(Get-ChildItem -Path \"PRPs\" -Filter \"*.md\" -Recurse)",
       "Bash(Select-Object FullName)",
-      "Bash(./venv/Scripts/python.exe:*)"
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }
