@@ -1,0 +1,37 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    # Run every 14 minutes to prevent Render free tier spin-down
+    # Render spins down after 15 minutes of inactivity
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Backend Health Check
+        run: |
+          echo "Pinging backend to prevent Render spin-down..."
+          echo "Target: https://mnm-home.onrender.com/"
+          echo "Time: $(date -u)"
+
+          # Ping the backend root endpoint
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://mnm-home.onrender.com/)
+
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Backend is alive! (HTTP $RESPONSE)"
+          else
+            echo "⚠️  Unexpected response: HTTP $RESPONSE"
+            exit 1
+          fi
+
+      - name: Log Success
+        if: success()
+        run: echo "Keep-alive ping completed successfully at $(date -u)"
+
+      - name: Log Failure
+        if: failure()
+        run: echo "❌ Keep-alive ping failed at $(date -u)"

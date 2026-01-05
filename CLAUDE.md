@@ -92,11 +92,17 @@
  
 #### Important Project Context
 
-**Current System State:**
-- Backend and frontend are implemented
+**Current System State (Updated: January 5, 2026):**
+- Backend and frontend are fully implemented and deployed
 - Database is configured and connected to Neon PostgreSQL (verified working)
-- Deployment is pending
+- Deployment is COMPLETE and LIVE
 - Status details are tracked in `PROJECT_STATUS.md`
+
+**Production Deployment:**
+- Backend: https://mnm-home.onrender.com (Render Free Tier)
+- Frontend: https://mnm-dashboard-frontend.onrender.com (Render Static Site)
+- Database: Neon PostgreSQL 17 (eu-central-1, Project: MnM)
+- All API endpoints tested and working correctly
 
 **Tech Stack:**
 - FastAPI, SQLAlchemy (async), asyncpg, PostgreSQL (Neon)
@@ -108,8 +114,13 @@
 - Draft notes
 - First-pick stats with win/loss tracking
 
+**Recent Fixes (January 5, 2026):**
+- Fixed DATABASE_URL for asyncpg compatibility (removed `channel_binding` and changed `sslmode` to `ssl`)
+- Correct connection string format: `postgresql+asyncpg://user:pass@host/db?ssl=require`
+- See [PRPs/implemented/render-backend-database-connection-fix.md](PRPs/implemented/render-backend-database-connection-fix.md)
+
 **Known Issues:**
-- Production CORS will need explicit frontend origins (see `backend/app/main.py`)
+- Production CORS is configured with wildcard for testing (should be tightened for production)
 - `frontend/src/components/PickStats.tsx` multiplies `win_rate` by 100 although the backend already returns a percent
 
 #### Neon MCP Server Integration
@@ -346,8 +357,11 @@ npm run build
 
 ## Important Implementation Details
 - `DATABASE_URL` must use the async driver scheme (`postgresql+asyncpg://`).
+- **CRITICAL for asyncpg**: Connection string must use `ssl=require` (NOT `sslmode=require` or `channel_binding=require`)
+  - Correct format: `postgresql+asyncpg://user:pass@host/db?ssl=require`
+  - asyncpg does NOT support `sslmode` or `channel_binding` query parameters
 - `backend/init_db.py` creates tables and seeds one session review and one draft note row.
-- CORS is configured in `backend/app/main.py` for localhost; production origins should be explicit.
+- CORS is configured in `backend/app/main.py` with wildcard for production testing.
 - `WeeklyChampions.tsx` uses hardcoded player/champion lists and computes the current week start on Monday.
 - `PickStats.tsx` sorts by `win_rate`; the backend already returns `win_rate` as a percent value.
 
