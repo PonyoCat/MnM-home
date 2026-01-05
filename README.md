@@ -1,10 +1,10 @@
-# League Dashboard
+# MnM dashboard
 
 A full-stack web application for tracking League of Legends team performance, draft notes, and statistics.
 
 ## Overview
 
-League Dashboard is a small full-stack app for a five-player League of Legends team. It provides four key features:
+MnM dashboard is a small full-stack app for a five-player League of Legends team. It provides four key features:
 - **Session Review Notes** - Shared notes for post-game analysis
 - **Weekly Champions Checklist** - Track which champions each player has mastered each week
 - **Draft Notes** - Strategic notes for draft phase

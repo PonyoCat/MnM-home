@@ -1,48 +1,71 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
+
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+}
 
 :root {
   --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
-  --radius: 0.5rem;
+  --foreground: 196 60% 9%;
+  --card: 0 0% 99%;
+  --card-foreground: 196 60% 9%;
+  --popover: 0 0% 99%;
+  --popover-foreground: 196 60% 9%;
+  --primary: 42 97% 63%;
+  --primary-foreground: 0 0% 0%;
+  --secondary: 25 91% 54%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 42 30% 92%;
+  --muted-foreground: 196 20% 45%;
+  --accent: 42 97% 95%;
+  --accent-foreground: 196 60% 9%;
+  --destructive: 15 78% 34%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 30%;
+  --input: 0 0% 30%;
+  --ring: 42 97% 63%;
+  --radius: 0.9rem;
 }
 
 .dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  --background: 240 7% 11%;
+  --foreground: 0 0% 100%;
+  --card: 197 68% 8%;
+  --card-foreground: 0 0% 100%;
+  --popover: 197 68% 8%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 42 97% 63%;
+  --primary-foreground: 240 7% 11%;
+  --secondary: 25 91% 54%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 240 10% 15%;
+  --muted-foreground: 0 0% 75%;
+  --accent: 197 68% 8%;
+  --accent-foreground: 42 97% 63%;
+  --destructive: 15 78% 45%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 10% 18%;
+  --input: 240 10% 18%;
+  --ring: 42 97% 63%;
 }
 
 * {
@@ -50,6 +73,33 @@
 }
 
 body {
+  min-height: 100%;
   background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(circle at 1px 1px, hsl(42 30% 70% / 0.2) 1px, transparent 0),
+    linear-gradient(180deg, hsl(42 50% 98%) 0%, hsl(42 40% 96%) 100%);
+  background-size: 24px 24px, auto;
   color: hsl(var(--foreground));
+  font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+  line-height: 1.6;
+  color-scheme: light;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(circle at 1px 1px, hsl(240 10% 20% / 0.3) 1px, transparent 0),
+    linear-gradient(180deg, hsl(240 7% 11%) 0%, hsl(240 10% 9%) 100%);
+  color-scheme: dark;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Fraunces", "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+
+#root {
+  min-height: 100%;
 }

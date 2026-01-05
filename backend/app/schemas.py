@@ -111,3 +111,25 @@ class WeeklyChampionArchive(WeeklyChampionArchiveBase):
 
     id: int
     archived_at: datetime
+
+# Champion Pool Schemas
+class ChampionPoolBase(BaseModel):
+    player_name: str
+    champion_name: str
+    description: str = Field(default="")
+    pick_priority: str = Field(default="")
+
+class ChampionPoolCreate(ChampionPoolBase):
+    pass
+
+class ChampionPoolUpdate(BaseModel):
+    champion_name: Optional[str] = None
+    description: Optional[str] = None
+    pick_priority: Optional[str] = None
+
+class ChampionPool(ChampionPoolBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime

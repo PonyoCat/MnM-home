@@ -51,7 +51,13 @@
       "Bash(powershell:*)",
       "Bash(.venvScriptspython.exe test_import.py)",
       "Bash(venv/Scripts/python.exe:*)",
-      "Bash(Start-Sleep -Seconds 3)"
+      "Bash(Start-Sleep -Seconds 3)",
+      "mcp__Neon__get_database_tables",
+      "mcp__Neon__run_sql",
+      "Bash(Select-String -Path \"frontend\\\\src\\\\App.tsx\", \"frontend\\\\index.html\", \"backend\\\\app\\\\main.py\", \"README.md\", \"PROJECT_STATUS.md\", \"backend\\\\README.md\" -Pattern \"League Dashboard\" -CaseSensitive)",
+      "Bash(Get-ChildItem -Path \"PRPs\" -Filter \"*.md\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(./venv/Scripts/python.exe:*)"
     ],
     "deny": []
   }

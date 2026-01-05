@@ -1,4 +1,4 @@
-# League Dashboard - Current Implementation Status
+# MnM Dashboard - Current Implementation Status
 
 **Last Updated:** January 3, 2026
 **Overall Completion:** 95%
@@ -8,12 +8,12 @@
 | Component | Status | Progress |
 |-----------|--------|----------|
 | Backend API | ✅ Complete | 100% |
-| Database Setup | ⏳ Pending | 0% (needs Neon config) |
+| Database Setup | ✅ Complete | 100% (Neon configured) |
 | Frontend Base | ✅ Complete | 100% |
 | UI Components | ✅ Complete | 100% |
 | Dashboard Pages | ✅ Complete | 100% |
 | Integration Testing | ⏳ Pending | 0% |
-| Deployment | ⏳ Pending | 0% |
+| Deployment | 🚀 Ready | 95% (guides created, ready to deploy) |
 
 ---
 
@@ -109,24 +109,70 @@ Project scaffolding and configuration done:
 - [ ] Test all CRUD operations
 - [ ] Verify mobile responsiveness
 
-### 3. Deployment (Optional)
+### 3. Production Deployment (Ready)
+**Deployment guides created and ready to use!**
+
+Complete deployment instructions available in:
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Comprehensive step-by-step guide
+- **[DEPLOYMENT_VALIDATION.md](DEPLOYMENT_VALIDATION.md)** - Testing checklist
+
+**Quick Start:**
+1. Deploy backend to Render (Free tier)
+   - Root directory: `backend`
+   - Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+   - Set `DATABASE_URL` env var
+
+2. Deploy frontend to Vercel (Hobby tier)
+   - Root directory: `frontend`
+   - Build command: `npm run build`
+   - Set `VITE_API_URL` env var
+
+3. Update CORS in `backend/app/main.py` with exact Vercel domain
+
+4. Validate using [DEPLOYMENT_VALIDATION.md](DEPLOYMENT_VALIDATION.md)
+
+**Deployment Checklist:**
 - [ ] Deploy backend to Render
 - [ ] Deploy frontend to Vercel
-- [ ] Configure environment variables
-- [ ] Test production deployment
+- [ ] Update CORS with production Vercel domain
+- [ ] Configure environment variables on both platforms
+- [ ] Test all features end-to-end
+- [ ] Record production URLs below
+- [ ] Optional: Set up keep-alive service (see [PRPs/keep-alive-service.md](PRPs/keep-alive-service.md))
+
+**Production URLs (after deployment):**
+- Frontend: `https://_____.vercel.app`
+- Backend: `https://_____.onrender.com`
+- API Docs: `https://_____.onrender.com/docs`
 
 ---
 
 ## 🚀 How to Continue
 
-### Ready to Test!
+### Option 1: Deploy to Production (Recommended)
 
-All code has been implemented! Now you just need to:
+**All code is complete and ready for deployment!**
+
+Follow the comprehensive deployment guide:
+1. **Read [DEPLOYMENT.md](DEPLOYMENT.md)** - Step-by-step instructions
+2. **Deploy backend to Render** - Free tier, auto-deploys from GitHub
+3. **Deploy frontend to Vercel** - Free tier, auto-builds on push
+4. **Use [DEPLOYMENT_VALIDATION.md](DEPLOYMENT_VALIDATION.md)** - Test everything works
+
+**Time estimate:** 30-45 minutes for first deployment
+
+**Cost:** $0/month (free tiers for all services)
+
+---
+
+### Option 2: Run Locally for Testing
+
+If you want to test locally before deploying:
 
 1. **Set up the database** (5 minutes)
-   - Create a free Neon PostgreSQL database
-   - Add the connection string to `backend/.env`
-   - Run the database initialization script
+   - Use existing Neon PostgreSQL database
+   - Connection string already in `backend/.env`
+   - Database tables already created
 
 2. **Start the servers** (2 minutes)
    ```bash
@@ -144,20 +190,15 @@ All code has been implemented! Now you just need to:
    - Navigate to http://localhost:5173
    - Start using the dashboard!
 
-### Option 2: Continue with Main PRP
+---
 
-```bash
-/execute-prp league-dashboard.md
-```
+### Option 3: Review PRPs
 
-The main PRP now includes:
-- Status section showing what's complete
-- Remaining tasks checklist
-- Quick start guide for continuation
-
-### Option 3: Manual Implementation
-
-Follow the "Remaining Tasks" section in `league-dashboard.md` or reference `frontend-shadcn-completion.md` for complete code examples.
+If you need to understand the implementation:
+- **[PRPs/league-dashboard.md](PRPs/league-dashboard.md)** - Main specification
+- **[PRPs/frontend-shadcn-completion.md](PRPs/frontend-shadcn-completion.md)** - Frontend details
+- **[PRPs/deployment-hosting.md](PRPs/deployment-hosting.md)** - Deployment technical spec
+- **[PRPs/keep-alive-service.md](PRPs/keep-alive-service.md)** - Optional enhancement
 
 ---
 

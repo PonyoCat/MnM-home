@@ -40,24 +40,37 @@ export function SessionReview() {
 
   async function loadArchives() {
     try {
+      console.log('[ARCHIVE] Loading archives from API...')
       const data = await api.getSessionReviewArchives()
+      console.log(`[ARCHIVE] Loaded ${data.length} archive(s):`, data)
       setArchives(data)
     } catch (error) {
-      console.error('Error loading archives:', error)
+      console.error('[ARCHIVE] Error loading archives:', error)
     }
   }
 
   async function archiveNotes() {
+    // Validate input
     if (!currentNotes.trim() && !currentTitle.trim()) {
+      console.log('[ARCHIVE] Cancelled: both title and notes are empty')
       return
     }
 
     try {
-      await api.createSessionReviewArchive(
+      setLoading(true)
+      console.log('[ARCHIVE] Creating archive:', {
+        title: currentTitle,
+        notes_length: currentNotes.length,
+        date: new Date().toISOString().split('T')[0]
+      })
+
+      // Create archive
+      const newArchive = await api.createSessionReviewArchive(
         currentTitle,
         currentNotes,
         new Date().toISOString().split('T')[0]
       )
+      console.log('[ARCHIVE] Archive created successfully:', newArchive)
 
       // Clear current notes and reset title
       setCurrentNotes('')
@@ -68,12 +81,23 @@ export function SessionReview() {
       }))
 
       // Update the main session review to clear it
+      console.log('[ARCHIVE] Clearing session review...')
       await api.updateSessionReview('')
+      console.log('[ARCHIVE] Session review cleared')
 
-      // Reload archives
+      // Reload archives to include new one
+      console.log('[ARCHIVE] Reloading archives...')
       await loadArchives()
+      console.log('[ARCHIVE] Archives reloaded')
+
+      // Show success message
+      alert('Session archived successfully!')
     } catch (error) {
-      console.error('Error archiving notes:', error)
+      console.error('[ARCHIVE] Failed to archive session:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      alert(`Failed to archive session: ${errorMessage}`)
+    } finally {
+      setLoading(false)
     }
   }
 

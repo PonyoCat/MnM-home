@@ -1,27 +1,33 @@
-import { SessionReview } from '@/components/SessionReview'
-import { WeeklyChampions } from '@/components/WeeklyChampions'
-import { DraftNotes } from '@/components/DraftNotes'
-import { PickStats } from '@/components/PickStats'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { Navigation } from '@/components/Navigation'
+import { HomePage } from '@/pages/HomePage'
+import { ScrimPage } from '@/pages/ScrimPage'
+import { ChampionPoolPage } from '@/pages/ChampionPoolPage'
 
 function App() {
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-foreground">League Dashboard</h1>
-          <p className="text-muted-foreground mt-2">
-            Track your team's performance and strategy
-          </p>
-        </header>
+    <BrowserRouter>
+      <div className="min-h-screen px-4 py-8 md:px-8">
+        <div className="max-w-6xl mx-auto space-y-8">
+          <header className="mb-4 border-b border-border/60 pb-6 space-y-2">
+            <h1 className="text-4xl md:text-5xl font-semibold text-foreground">
+              MnM dashboard
+            </h1>
+            <p className="text-muted-foreground text-base md:text-lg">
+              Work harder not smarter
+            </p>
+          </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <SessionReview />
-          <WeeklyChampions />
-          <DraftNotes />
-          <PickStats />
+          <Navigation />
+
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/scrim" element={<ScrimPage />} />
+            <Route path="/champion-pool" element={<ChampionPoolPage />} />
+          </Routes>
         </div>
       </div>
-    </div>
+    </BrowserRouter>
   )
 }
 

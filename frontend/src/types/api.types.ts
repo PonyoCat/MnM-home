@@ -48,3 +48,13 @@ export interface WeeklyChampionArchive {
   week_end_date: string
   archived_at: string
 }
+
+export interface ChampionPool {
+  id: number
+  player_name: string
+  champion_name: string
+  description: string
+  pick_priority: string
+  created_at: string
+  updated_at: string
+}

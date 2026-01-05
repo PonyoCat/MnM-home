@@ -1,15 +1,12 @@
-## FEATURE:
+## FEATURES
 
-Lets split the website into 2 different sites.
-You should have a home tab where there is
-- Weekly games (Formerly Weekly Champions)
-- Weekly message
+### Champion pool side
 
-Then there should be a scrim tab where
-- Session review
-- Draft notes
-- Pick Statistics
-
+Lav en champion pool side, hvor man kan klikke ind under de 5 spilleres navne for at se en liste der har:
+- Champ
+- Beskrivelse
+- Pick
+Det er alt sammen strings
 
 ## EXAMPLES:
 

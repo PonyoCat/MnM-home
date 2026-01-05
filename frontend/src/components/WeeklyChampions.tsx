@@ -37,7 +37,7 @@ export function WeeklyChampions() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
-    Alex: true, Hans: true, Elias: true, Mikkel: true, Sinus: true
+    Alex: false, Hans: false, Elias: false, Mikkel: false, Sinus: false
   })
   const weekStart = getWeekStart()
 

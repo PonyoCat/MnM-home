@@ -9,6 +9,7 @@
 - **[INITIAL.md](INITIAL.md)** - Original feature request and goals
 - **[PRPs/league-dashboard.md](PRPs/league-dashboard.md)** - Full spec, implementation blueprint, and validation steps
 - **[PRPs/frontend-shadcn-completion.md](PRPs/frontend-shadcn-completion.md)** - Frontend completion guide
+- **[PRPs/ui-enhancements.md](PRPs/ui-enhancements.md)** - Multi-page navigation, dark mode toggle, and archive fix
 - **[backend/README.md](backend/README.md)** - Backend setup and API summary
 - **[COMPLETION_SUMMARY.md](COMPLETION_SUMMARY.md)** - High-level completion notes
 
@@ -108,9 +109,81 @@
 - First-pick stats with win/loss tracking
 
 **Known Issues:**
-- `backend/.env` contains a placeholder `DATABASE_URL` until Neon credentials are set
 - Production CORS will need explicit frontend origins (see `backend/app/main.py`)
 - `frontend/src/components/PickStats.tsx` multiplies `win_rate` by 100 although the backend already returns a percent
+
+#### Neon MCP Server Integration
+
+**Connection Status:**
+- Neon MCP server is configured and active
+- Project: MnM (round-dust-39089624)
+- Database: neondb (PostgreSQL 17, eu-central-1)
+- Connection string configured in `backend/.env`
+
+**Available Capabilities:**
+
+**Project & Organization Management:**
+- List and search organizations
+- List, create, describe, and delete projects
+- Get connection strings for any project/branch
+
+**Database Operations:**
+- Run SQL queries and transactions
+- Get table lists and describe table schemas
+- Execute EXPLAIN for query analysis
+- List slow queries for performance monitoring
+
+**Schema Management:**
+- Prepare and complete database migrations (safe two-step process)
+- Compare schemas between branches
+- Generate zero-downtime migration SQL
+
+**Query Performance Tuning:**
+- Prepare query tuning (analyze execution plans, suggest indexes)
+- Complete query tuning (apply optimizations)
+- Automatic index recommendations based on query patterns
+
+**Branching & Development:**
+- Create branches for development/staging
+- Delete branches
+- Reset branch from parent
+- Describe branch contents (all objects)
+- Compare database schemas between branches
+
+**Authentication:**
+- Provision Neon Auth for branch (managed auth service)
+
+**Advanced Features:**
+- Search across all resources (orgs, projects, branches)
+- Fetch detailed resource information
+- List branch computes (endpoints)
+- Load documentation resources
+
+**Common Workflows:**
+
+1. **Safe Schema Changes:**
+   - Use `prepare_database_migration` to test changes on temporary branch
+   - Review and verify changes
+   - Use `complete_database_migration` to apply to main branch
+
+2. **Query Optimization:**
+   - Use `list_slow_queries` to identify performance issues
+   - Use `prepare_query_tuning` to analyze and get index suggestions
+   - Test changes on temporary branch
+   - Use `complete_query_tuning` to apply optimizations
+
+3. **Development Branching:**
+   - Create branch for feature development
+   - Test schema changes on branch
+   - Compare schemas with parent before merging
+   - Reset or delete branch when done
+
+**Best Practices:**
+- Always use migration tools for schema changes (never modify main branch directly)
+- Test queries on temporary branches before applying to production
+- Use `compare_database_schema` before merging branches
+- Leverage `explain_sql_statement` to understand query performance
+- Use Neon's branching feature for development/staging environments
 
 ---
  

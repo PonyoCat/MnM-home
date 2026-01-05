@@ -334,3 +334,73 @@ async def delete_one_weekly_champion_instance(
         return True
 
     return False
+
+# Champion Pool CRUD
+async def get_champion_pools(
+    db: AsyncSession,
+    player_name: str = None
+) -> List[models.ChampionPool]:
+    """Get champion pools, optionally filtered by player"""
+    query = select(models.ChampionPool).order_by(
+        models.ChampionPool.player_name,
+        models.ChampionPool.champion_name
+    )
+
+    if player_name:
+        query = query.where(models.ChampionPool.player_name == player_name)
+
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+async def create_champion_pool(
+    db: AsyncSession,
+    pool_data: schemas.ChampionPoolCreate
+) -> models.ChampionPool:
+    """Create new champion pool entry"""
+    pool = models.ChampionPool(**pool_data.model_dump())
+    db.add(pool)
+    await db.commit()
+    await db.refresh(pool)
+    return pool
+
+async def update_champion_pool(
+    db: AsyncSession,
+    pool_id: int,
+    pool_data: schemas.ChampionPoolUpdate
+) -> models.ChampionPool:
+    """Update champion pool entry"""
+    result = await db.execute(
+        select(models.ChampionPool).where(models.ChampionPool.id == pool_id)
+    )
+    pool = result.scalars().first()
+
+    if pool:
+        # Update only provided fields
+        if pool_data.champion_name is not None:
+            pool.champion_name = pool_data.champion_name
+        if pool_data.description is not None:
+            pool.description = pool_data.description
+        if pool_data.pick_priority is not None:
+            pool.pick_priority = pool_data.pick_priority
+
+        await db.commit()
+        await db.refresh(pool)
+
+    return pool
+
+async def delete_champion_pool(
+    db: AsyncSession,
+    pool_id: int
+) -> bool:
+    """Delete champion pool entry"""
+    result = await db.execute(
+        select(models.ChampionPool).where(models.ChampionPool.id == pool_id)
+    )
+    pool = result.scalars().first()
+
+    if pool:
+        await db.delete(pool)
+        await db.commit()
+        return True
+
+    return False

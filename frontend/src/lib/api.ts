@@ -165,6 +165,56 @@ export const api = {
     const response = await fetch(url)
     if (!response.ok) throw new Error('Failed to fetch game archives')
     return response.json()
+  },
+
+  // Champion Pool
+  async getChampionPools(playerName?: string) {
+    const url = playerName
+      ? `${API_URL}/api/champion-pool?player_name=${encodeURIComponent(playerName)}`
+      : `${API_URL}/api/champion-pool`
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('Failed to fetch champion pools')
+    return response.json()
+  },
+
+  async createChampionPool(data: {
+    player_name: string
+    champion_name: string
+    description: string
+    pick_priority: string
+  }) {
+    const response = await fetch(`${API_URL}/api/champion-pool`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) throw new Error('Failed to create champion pool entry')
+    return response.json()
+  },
+
+  async updateChampionPool(
+    id: number,
+    data: {
+      champion_name?: string
+      description?: string
+      pick_priority?: string
+    }
+  ) {
+    const response = await fetch(`${API_URL}/api/champion-pool/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) throw new Error('Failed to update champion pool entry')
+    return response.json()
+  },
+
+  async deleteChampionPool(id: number) {
+    const response = await fetch(`${API_URL}/api/champion-pool/${id}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) throw new Error('Failed to delete champion pool entry')
+    return response.json()
   }
 }
 

@@ -1,4 +1,4 @@
-# League Dashboard Backend
+# MnM Dashboard Backend
 
 Python FastAPI backend for the League of Legends team dashboard.
 

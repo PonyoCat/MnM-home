@@ -12,6 +12,13 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
     print("Database tables created successfully!")
+    print("\nTables created:")
+    print("  - session_reviews")
+    print("  - weekly_champions")
+    print("  - draft_notes")
+    print("  - pick_stats")
+    print("  - session_review_archives")
+    print("  - weekly_champion_archives")
 
     # Insert initial rows for session_reviews and draft_notes
     async with AsyncSessionLocal() as session:
