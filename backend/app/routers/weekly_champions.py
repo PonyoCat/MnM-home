@@ -53,6 +53,25 @@ async def archive_week(
     """Archive weekly champion stats for a specific week"""
     return await crud.archive_weekly_champions(db, week_start)
 
+@router.post("/archive-current-week", response_model=List[schemas.WeeklyChampionArchive])
+async def archive_current_week(db: AsyncSession = Depends(get_db)):
+    """
+    Archive the current week's champion stats and reset the data.
+    Automatically calculates the week start (Monday) for the current week.
+    This endpoint is designed to be called by scheduled jobs.
+    """
+    from datetime import datetime, timedelta
+
+    # Get current date
+    today = datetime.now().date()
+
+    # Calculate the Monday of the current week
+    # weekday() returns 0=Monday, 6=Sunday
+    days_since_monday = today.weekday()
+    week_start = today - timedelta(days=days_since_monday)
+
+    return await crud.archive_weekly_champions(db, week_start)
+
 @router.get("/archives", response_model=List[schemas.WeeklyChampionArchive])
 async def get_archives(
     player_name: Optional[str] = Query(None, description="Filter by player name"),

@@ -1,14 +1,9 @@
 ## FEATURES
 
-~~The keep alive system does not work on my backend (URL: https://mnm-home.onrender.com/)~~
-~~After 15 minutes it shut down. But my frontend was still up.~~
+Under the pick statistics you should have the ability to edit a champion if you typed it in wrong. 
+Also add a way to search for the champion in the top. And adding champion name should be at the bottom
 
-**STATUS: FIXED** (January 6, 2026)
-- **Issue:** GitHub Actions keep-alive workflow is unreliable (delays of 3-10+ minutes)
-- **Root Cause:** GitHub Actions cannot guarantee consistent timing needed for Render's 15-minute deadline
-- **Solution:** Use external monitoring service (UptimeRobot or cron-job.org)
-- **Setup Guide:** See [KEEP_ALIVE_SETUP_GUIDE.md](KEEP_ALIVE_SETUP_GUIDE.md) for step-by-step instructions
-- **Action Required:** User needs to set up UptimeRobot account (5 minutes, free forever)
+Also you can make the dashboard fille the length of the two other dashboards. Right now it is only filling half of the dashboards
 
 ## EXAMPLES:
 

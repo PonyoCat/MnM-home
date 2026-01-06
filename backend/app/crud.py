@@ -233,8 +233,9 @@ async def archive_weekly_champions(
     week_start: date
 ) -> List[models.WeeklyChampionArchive]:
     """
-    Archive all champions for a specific week.
-    Aggregates play counts per player/champion combination.
+    Archive all champions for a specific week and reset the data.
+    Aggregates play counts per player/champion combination, saves to archive,
+    then deletes all weekly champion records for that week.
     """
     # Get all champions for this week
     champions = await get_weekly_champions(db, week_start)
@@ -270,6 +271,14 @@ async def archive_weekly_champions(
     # Refresh all archives
     for archive in archives:
         await db.refresh(archive)
+
+    # Delete all weekly champion records for this week (reset)
+    await db.execute(
+        delete(models.WeeklyChampion).where(
+            models.WeeklyChampion.week_start_date == week_start
+        )
+    )
+    await db.commit()
 
     return archives
 

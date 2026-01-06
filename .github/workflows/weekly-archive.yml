@@ -1,0 +1,48 @@
+name: Weekly Database Archive
+
+on:
+  schedule:
+    # Run every Tuesday at 23:01 UTC (Wednesday 00:01 CET / 01:01 CEST)
+    # This archives the current week's data and resets for the new week
+    - cron: '1 23 * * 2'
+  workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Archive Weekly Champions
+        run: |
+          echo "Starting weekly database archive..."
+          echo "Target: https://mnm-home.onrender.com/api/weekly-champions/archive-current-week"
+          echo "Time (UTC): $(date -u)"
+          echo "Time (CET/CEST): $(TZ='Europe/Copenhagen' date)"
+
+          # Call the archive endpoint
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST https://mnm-home.onrender.com/api/weekly-champions/archive-current-week)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Archive successful! (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+          else
+            echo "Archive failed with HTTP $HTTP_CODE"
+            echo "Response: $BODY"
+            exit 1
+          fi
+
+      - name: Log Success
+        if: success()
+        run: |
+          echo "Weekly archive completed successfully!"
+          echo "UTC Time: $(date -u)"
+          echo "Denmark Time: $(TZ='Europe/Copenhagen' date)"
+
+      - name: Log Failure
+        if: failure()
+        run: |
+          echo "Weekly archive failed!"
+          echo "UTC Time: $(date -u)"
+          echo "Denmark Time: $(TZ='Europe/Copenhagen' date)"
