@@ -15,6 +15,7 @@
 
 **Specialized Documentation:**
 - **[PRPs/templates/prp_base.md](PRPs/templates/prp_base.md)** - PRP template
+- **[PRPs/league-client-tracker.md](PRPs/league-client-tracker.md)** - Automatic game tracking service (NEW)
 - **[.claude/commands/execute-prp.md](.claude/commands/execute-prp.md)** - PRP execution command
 - **[.claude/commands/generate-prp.md](.claude/commands/generate-prp.md)** - PRP generation command
 
@@ -92,16 +93,18 @@
  
 #### Important Project Context
 
-**Current System State (Updated: January 5, 2026):**
+**Current System State (Updated: January 6, 2026):**
 - Backend and frontend are fully implemented and deployed
 - Database is configured and connected to Neon PostgreSQL (verified working)
 - Deployment is COMPLETE and LIVE
+- Keep-alive service fix identified - external monitoring service (UptimeRobot) recommended
 - Status details are tracked in `PROJECT_STATUS.md`
 
 **Production Deployment:**
 - Backend: https://mnm-home.onrender.com (Render Free Tier)
 - Frontend: https://mnm-dashboard-frontend.onrender.com (Render Static Site)
 - Database: Neon PostgreSQL 17 (eu-central-1, Project: MnM)
+- Keep-Alive: External monitoring service (UptimeRobot recommended) needed - GitHub Actions not reliable
 - All API endpoints tested and working correctly
 
 **Tech Stack:**
@@ -113,8 +116,22 @@
 - Weekly champions checklist
 - Draft notes
 - First-pick stats with win/loss tracking
+- Champion pool management per player
+- **NEW:** Automatic game tracking via League client integration (see [PRPs/league-client-tracker.md](PRPs/league-client-tracker.md))
 
-**Recent Fixes (January 5, 2026):**
+**Recent Updates:**
+
+*January 6, 2026:*
+- **Keep-Alive Fix:** Identified that GitHub Actions is NOT reliable for keep-alive
+  - GitHub Actions has delays of 3-10+ minutes during high load
+  - Cannot guarantee consistent timing for Render's 15-minute deadline
+  - Created comprehensive setup guide for external monitoring services
+  - Recommended solution: UptimeRobot (free, 5-min intervals, 99.9%+ reliability)
+  - Reference: [KEEP_ALIVE_SETUP_GUIDE.md](KEEP_ALIVE_SETUP_GUIDE.md)
+  - PRP: [PRPs/fix-keep-alive-service.md](PRPs/fix-keep-alive-service.md)
+  - **Action Required:** User needs to set up UptimeRobot account (5 minutes)
+
+*January 5, 2026:*
 - Fixed DATABASE_URL for asyncpg compatibility (removed `channel_binding` and changed `sslmode` to `ssl`)
 - Correct connection string format: `postgresql+asyncpg://user:pass@host/db?ssl=require`
 - See [PRPs/implemented/render-backend-database-connection-fix.md](PRPs/implemented/render-backend-database-connection-fix.md)
@@ -122,6 +139,7 @@
 **Known Issues:**
 - Production CORS is configured with wildcard for testing (should be tightened for production)
 - `frontend/src/components/PickStats.tsx` multiplies `win_rate` by 100 although the backend already returns a percent
+- Champion deletion feature may not be working correctly on frontend (noted in INITIAL.md)
 
 #### Neon MCP Server Integration
 
@@ -249,6 +267,7 @@ MnM-home/
         weekly_champions.py
         draft_notes.py
         pick_stats.py
+        champion_pool.py
     init_db.py
     requirements.txt
     README.md
@@ -293,9 +312,20 @@ MnM-home/
     league-dashboard.md
     frontend-shadcn-completion.md
     keep-alive-service.md
+    league-client-tracker.md
     templates/
       prp_base.md
     EXAMPLE_multi_agent_prp.md
+  league-tracker/           # NEW: Standalone game tracking service (see PRPs/league-client-tracker.md)
+    tracker.py
+    config.py
+    api_client.py
+    champion_data.py
+    requirements.txt
+    .env.example
+    .env
+    .gitignore
+    README.md
   PROJECT_STATUS.md
   INITIAL.md
   COMPLETION_SUMMARY.md
@@ -343,25 +373,56 @@ npm run build
 ```
 
 ## API Endpoints
-- `GET /api/session-review`
-- `PUT /api/session-review`
-- `GET /api/weekly-champions?week_start=YYYY-MM-DD`
-- `POST /api/weekly-champions`
-- `GET /api/draft-notes`
-- `PUT /api/draft-notes`
-- `GET /api/pick-stats`
-- `POST /api/pick-stats`
-- `PATCH /api/pick-stats/{id}/win`
-- `PATCH /api/pick-stats/{id}/loss`
-- `DELETE /api/pick-stats/{id}`
+
+**Session Review:**
+- `GET /api/session-review` - Get session review notes
+- `PUT /api/session-review` - Update session review notes
+
+**Weekly Champions:**
+- `GET /api/weekly-champions?week_start=YYYY-MM-DD` - Get weekly champion data
+- `POST /api/weekly-champions` - Create/update weekly champion entry
+
+**Draft Notes:**
+- `GET /api/draft-notes` - Get draft strategy notes
+- `PUT /api/draft-notes` - Update draft strategy notes
+
+**Pick Stats:**
+- `GET /api/pick-stats` - Get first-pick statistics
+- `POST /api/pick-stats` - Create new pick stat entry
+- `PATCH /api/pick-stats/{id}/win` - Increment wins for a pick
+- `PATCH /api/pick-stats/{id}/loss` - Increment losses for a pick
+- `DELETE /api/pick-stats/{id}` - Delete a pick stat entry
+
+**Champion Pool:**
+- `GET /api/champion-pool?player_name={name}` - Get champion pools (optional filter by player)
+- `POST /api/champion-pool` - Create new champion pool entry
+- `PATCH /api/champion-pool/{id}` - Update champion pool entry
+- `DELETE /api/champion-pool/{id}` - Delete champion pool entry
 
 ## Important Implementation Details
+
+**Database Connection:**
 - `DATABASE_URL` must use the async driver scheme (`postgresql+asyncpg://`).
 - **CRITICAL for asyncpg**: Connection string must use `ssl=require` (NOT `sslmode=require` or `channel_binding=require`)
   - Correct format: `postgresql+asyncpg://user:pass@host/db?ssl=require`
   - asyncpg does NOT support `sslmode` or `channel_binding` query parameters
+
+**Backend Configuration:**
 - `backend/init_db.py` creates tables and seeds one session review and one draft note row.
 - CORS is configured in `backend/app/main.py` with wildcard for production testing.
+- Health check endpoint at `/` returns JSON status (used by keep-alive service)
+
+**Keep-Alive Service:**
+- **Issue:** GitHub Actions workflow at `.github/workflows/keep-alive.yml` is NOT reliable
+  - Cannot guarantee consistent timing (delays of 3-10+ minutes)
+  - Render spins down after exactly 15 minutes
+- **Solution:** Use external monitoring service (UptimeRobot or cron-job.org)
+  - UptimeRobot: Free, 5-minute intervals, 99.9%+ reliability (RECOMMENDED)
+  - Setup guide: [KEEP_ALIVE_SETUP_GUIDE.md](KEEP_ALIVE_SETUP_GUIDE.md)
+- Target: `https://mnm-home.onrender.com/` (health endpoint verified working)
+- Benefits: Eliminates 30-second cold starts for better UX
+
+**Frontend Behavior:**
 - `WeeklyChampions.tsx` uses hardcoded player/champion lists and computes the current week start on Monday.
 - `PickStats.tsx` sorts by `win_rate`; the backend already returns `win_rate` as a percent value.
 

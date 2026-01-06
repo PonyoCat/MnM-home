@@ -48,7 +48,7 @@ app.include_router(draft_notes.router)
 app.include_router(pick_stats.router)
 app.include_router(champion_pool.router)
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
-    """Health check endpoint"""
+    """Health check endpoint - supports both GET and HEAD for monitoring services"""
     return {"message": "MnM Dashboard API", "status": "running", "version": "1.0.0"}

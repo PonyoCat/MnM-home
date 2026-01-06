@@ -1,6 +1,6 @@
 # MnM Dashboard - Current Implementation Status
 
-**Last Updated:** January 5, 2026
+**Last Updated:** January 6, 2026
 **Overall Completion:** 100%
 
 ## 📊 Quick Status
@@ -132,16 +132,31 @@ Project scaffolding and configuration done:
 - Status: ✅ Resolved - All API endpoints working correctly
 - Reference: [PRPs/implemented/render-backend-database-connection-fix.md](PRPs/implemented/render-backend-database-connection-fix.md)
 
-**Keep-Alive Service (January 5, 2026):**
-- Implementation: GitHub Actions workflow (`.github/workflows/keep-alive.yml`)
-- Schedule: Pings backend every 14 minutes to prevent Render free tier spin-down
-- Target: `https://mnm-home.onrender.com/`
-- Status: ✅ Workflow created - Ready to activate on push to GitHub
-- Benefits: Eliminates 30-second cold starts, maintains instant page loads
-- References:
-  - [KEEP_ALIVE_SETUP.md](KEEP_ALIVE_SETUP.md) - Implementation guide and alternatives
-  - [KEEP_ALIVE_VALIDATION.md](KEEP_ALIVE_VALIDATION.md) - Validation checklist
-  - [PRPs/keep-alive-service.md](PRPs/keep-alive-service.md) - Original PRP
+**Keep-Alive Service (Updated January 6, 2026):**
+- **Issue Identified:** GitHub Actions workflow is NOT reliable for keep-alive
+  - Delays of 3-10+ minutes during high load
+  - Cannot guarantee consistent timing for Render's 15-minute deadline
+  - Workflow exists at `.github/workflows/keep-alive.yml` but NOT recommended
+- **Recommended Solution:** Use external monitoring service (UptimeRobot or cron-job.org)
+  - UptimeRobot: Free, 5-minute intervals, 99.9%+ reliability, email alerts
+  - cron-job.org: Free, 14-minute intervals, unlimited jobs
+- **Status:** ⚠️ Action Required - User needs to set up external monitoring service
+- **Setup Guide:** [KEEP_ALIVE_SETUP_GUIDE.md](KEEP_ALIVE_SETUP_GUIDE.md) - Step-by-step UptimeRobot setup (5 minutes)
+- **Target:** `https://mnm-home.onrender.com/` (health endpoint verified working)
+- **Benefits:** Eliminates 30-second cold starts, maintains instant page loads
+- **References:**
+  - [PRPs/fix-keep-alive-service.md](PRPs/fix-keep-alive-service.md) - Fix PRP with research and alternatives
+
+**Weekly Archive Service (January 6, 2026):**
+- Implementation: GitHub Actions workflow (`.github/workflows/weekly-archive.yml`)
+- Schedule: Every Tuesday 23:01 UTC (Wednesday 00:01 CET / 01:01 CEST)
+- Target: `https://mnm-home.onrender.com/api/weekly-champions/archive-current-week`
+- Status: ✅ Workflow created and ready to activate
+- Features:
+  - Archives all weekly champion game data to `weekly_champion_archives` table
+  - Resets weekly champion tracking for the new week
+  - Archived data available for future graph generation via `/api/weekly-champions/archives`
+- Benefits: Automatic weekly data preservation and reset, historical tracking for analytics
 
 ---
 
