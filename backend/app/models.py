@@ -70,3 +70,12 @@ class ChampionPool(Base):
     pick_priority = Column(Text, default="", nullable=False)  # Pick strategy notes
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class WeeklyMessage(Base):
+    """Weekly message shared across all users"""
+    __tablename__ = "weekly_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    message = Column(Text, default="", nullable=False)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

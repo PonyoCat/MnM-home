@@ -34,6 +34,24 @@ async def add_loss(id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Pick stat not found")
     return result
 
+@router.patch("/{id}/champion", response_model=schemas.PickStat)
+async def update_champion_name(
+    id: int,
+    data: schemas.PickStatChampionUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update champion name for a pick stat"""
+    try:
+        stat = await crud.update_pick_stat_champion(db, id, data.champion_name)
+        # Compute win_rate
+        stat.win_rate = (
+            (stat.first_pick_wins / stat.first_pick_games * 100)
+            if stat.first_pick_games > 0 else 0.0
+        )
+        return stat
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.delete("/{id}")
 async def delete_pick_stat(id: int, db: AsyncSession = Depends(get_db)):
     """Delete a pick stat by ID"""

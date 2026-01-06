@@ -66,6 +66,9 @@ class PickStatUpdate(BaseModel):
     first_pick_games: Optional[int] = None
     first_pick_wins: Optional[int] = None
 
+class PickStatChampionUpdate(BaseModel):
+    champion_name: str
+
 class PickStat(PickStatBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -133,3 +136,17 @@ class ChampionPool(ChampionPoolBase):
     id: int
     created_at: datetime
     updated_at: datetime
+
+# Weekly Message Schemas
+class WeeklyMessageBase(BaseModel):
+    message: str = Field(default="")
+
+class WeeklyMessageUpdate(WeeklyMessageBase):
+    pass
+
+class WeeklyMessage(WeeklyMessageBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    last_updated: datetime
+    created_at: datetime

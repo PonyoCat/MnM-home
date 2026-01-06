@@ -157,7 +157,7 @@ export function WeeklyChampions() {
 
   function getUniqueChampions(player: string): string[] {
     const uniqueChamps = new Set(playerChampions[player].map(c => c.champion_name))
-    return Array.from(uniqueChamps)
+    return Array.from(uniqueChamps).sort((a, b) => a.localeCompare(b))
   }
 
   function togglePlayerExpanded(player: string) {
@@ -175,11 +175,11 @@ export function WeeklyChampions() {
 
   return (
     <>
-      <Card>
+      <Card className="h-full flex flex-col">
         <CardHeader>
           <CardTitle>Weekly Games (Week of {weekStart})</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 flex-1">
           {PLAYERS.map(player => (
             <div key={player} className="space-y-2">
               <h3

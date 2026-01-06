@@ -413,3 +413,52 @@ async def delete_champion_pool(
         return True
 
     return False
+
+# Weekly Message CRUD
+async def get_weekly_message(db: AsyncSession) -> models.WeeklyMessage:
+    """Get the single weekly message record"""
+    result = await db.execute(select(models.WeeklyMessage).where(models.WeeklyMessage.id == 1))
+    message = result.scalar_one_or_none()
+    if not message:
+        # Create initial row if doesn't exist
+        message = models.WeeklyMessage(id=1, message="")
+        db.add(message)
+        await db.commit()
+        await db.refresh(message)
+    return message
+
+async def update_weekly_message(db: AsyncSession, message: str) -> models.WeeklyMessage:
+    """Update weekly message"""
+    weekly_message = await get_weekly_message(db)
+    weekly_message.message = message
+    await db.commit()
+    await db.refresh(weekly_message)
+    return weekly_message
+
+# Pick Stats - Edit Champion Name
+async def update_pick_stat_champion(
+    db: AsyncSession,
+    stat_id: int,
+    new_champion_name: str
+) -> models.PickStat:
+    """Update champion name for a pick stat"""
+    result = await db.execute(
+        select(models.PickStat).where(models.PickStat.id == stat_id)
+    )
+    stat = result.scalar_one_or_none()
+    if not stat:
+        raise ValueError("Pick stat not found")
+
+    # Check if new name already exists (different champion)
+    check_result = await db.execute(
+        select(models.PickStat)
+        .where(models.PickStat.champion_name == new_champion_name)
+        .where(models.PickStat.id != stat_id)
+    )
+    if check_result.scalar_one_or_none():
+        raise ValueError("Champion name already exists")
+
+    stat.champion_name = new_champion_name
+    await db.commit()
+    await db.refresh(stat)
+    return stat

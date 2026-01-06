@@ -98,6 +98,19 @@ export const api = {
     return response.json()
   },
 
+  async updatePickStatChampion(id: number, championName: string) {
+    const response = await fetch(`${API_URL}/api/pick-stats/${id}/champion`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ champion_name: championName })
+    })
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Failed to update champion name')
+    }
+    return response.json()
+  },
+
   // Session Review Archives
   async createSessionReviewArchive(title: string, notes: string, originalDate?: string) {
     const response = await fetch(`${API_URL}/api/session-review/archive`, {
@@ -214,6 +227,23 @@ export const api = {
       method: 'DELETE'
     })
     if (!response.ok) throw new Error('Failed to delete champion pool entry')
+    return response.json()
+  },
+
+  // Weekly Message
+  async getWeeklyMessage() {
+    const response = await fetch(`${API_URL}/api/weekly-message`)
+    if (!response.ok) throw new Error('Failed to fetch weekly message')
+    return response.json()
+  },
+
+  async updateWeeklyMessage(message: string) {
+    const response = await fetch(`${API_URL}/api/weekly-message`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message })
+    })
+    if (!response.ok) throw new Error('Failed to update weekly message')
     return response.json()
   }
 }

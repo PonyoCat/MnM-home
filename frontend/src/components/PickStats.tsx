@@ -14,6 +14,13 @@ import {
   AlertDialogAction,
   AlertDialogCancel
 } from './ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from './ui/dialog'
 import { api } from '@/lib/api'
 import type { PickStat } from '@/types/api.types'
 
@@ -23,6 +30,11 @@ export function PickStats() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [championToDelete, setChampionToDelete] = useState<PickStat | null>(null)
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [editingStat, setEditingStat] = useState<PickStat | null>(null)
+  const [editChampionName, setEditChampionName] = useState('')
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [sortBy, setSortBy] = useState<'win_rate' | 'games'>('win_rate')
 
   useEffect(() => {
     loadStats()
@@ -31,7 +43,9 @@ export function PickStats() {
   async function loadStats() {
     try {
       const data = await api.getPickStats()
-      const sorted = data.sort((a: PickStat, b: PickStat) => b.win_rate - a.win_rate)
+      const sorted = sortBy === 'win_rate'
+        ? data.sort((a: PickStat, b: PickStat) => b.win_rate - a.win_rate)
+        : data.sort((a: PickStat, b: PickStat) => b.first_pick_games - a.first_pick_games)
       setStats(sorted)
     } catch (error) {
       console.error('Error loading pick stats:', error)
@@ -39,6 +53,12 @@ export function PickStats() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!loading) {
+      loadStats()
+    }
+  }, [sortBy])
 
   async function addChampion() {
     if (!newChampion.trim()) return
@@ -87,6 +107,24 @@ export function PickStats() {
     }
   }
 
+  async function handleEditChampion() {
+    if (!editingStat || !editChampionName.trim()) return
+    try {
+      await api.updatePickStatChampion(editingStat.id, editChampionName.trim())
+      setEditDialogOpen(false)
+      setEditingStat(null)
+      setEditChampionName('')
+      await loadStats()
+    } catch (error: any) {
+      console.error('Error editing champion:', error)
+      alert(error.message || 'Failed to update champion name')
+    }
+  }
+
+  const filteredStats = stats.filter(stat =>
+    stat.champion_name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   if (loading) {
     return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
   }
@@ -99,12 +137,23 @@ export function PickStats() {
       <CardContent className="space-y-4">
         <div className="flex gap-2">
           <Input
-            value={newChampion}
-            onChange={(e) => setNewChampion(e.target.value)}
-            placeholder="Champion name..."
-            onKeyDown={(e) => e.key === 'Enter' && addChampion()}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search champions..."
+            className="flex-1"
           />
-          <Button onClick={addChampion}>Add</Button>
+          <Button
+            variant={sortBy === 'win_rate' ? 'default' : 'outline'}
+            onClick={() => setSortBy('win_rate')}
+          >
+            Win %
+          </Button>
+          <Button
+            variant={sortBy === 'games' ? 'default' : 'outline'}
+            onClick={() => setSortBy('games')}
+          >
+            Games
+          </Button>
         </div>
         <Table>
           <TableHeader>
@@ -117,7 +166,7 @@ export function PickStats() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {stats.map(stat => (
+            {filteredStats.map(stat => (
               <TableRow key={stat.id}>
                 <TableCell className="font-medium">{stat.champion_name}</TableCell>
                 <TableCell>{stat.first_pick_games}</TableCell>
@@ -130,6 +179,17 @@ export function PickStats() {
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleLoss(stat.id)}>
                       Loss
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingStat(stat)
+                        setEditChampionName(stat.champion_name)
+                        setEditDialogOpen(true)
+                      }}
+                    >
+                      Edit
                     </Button>
                     <AlertDialog
                       onOpenChange={(open) => {
@@ -183,6 +243,38 @@ export function PickStats() {
             ))}
           </TableBody>
         </Table>
+
+        <div className="flex gap-2 pt-4 border-t">
+          <Input
+            value={newChampion}
+            onChange={(e) => setNewChampion(e.target.value)}
+            placeholder="Add new champion..."
+            onKeyDown={(e) => e.key === 'Enter' && addChampion()}
+          />
+          <Button onClick={addChampion}>Add Champion</Button>
+        </div>
+
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Champion Name</DialogTitle>
+            </DialogHeader>
+            <Input
+              value={editChampionName}
+              onChange={(e) => setEditChampionName(e.target.value)}
+              placeholder="Champion name..."
+              onKeyDown={(e) => e.key === 'Enter' && handleEditChampion()}
+            />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleEditChampion}>
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   )

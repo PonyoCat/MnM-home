@@ -60,7 +60,9 @@
       "Bash(./venv/Scripts/python.exe:*)",
       "Bash(curl:*)",
       "Bash(claude mcp list:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

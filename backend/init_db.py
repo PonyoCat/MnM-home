@@ -1,6 +1,6 @@
 import asyncio
 from app.database import engine, Base
-from app.models import SessionReview, DraftNote, WeeklyChampion, PickStat, SessionReviewArchive, WeeklyChampionArchive
+from app.models import SessionReview, DraftNote, WeeklyChampion, PickStat, SessionReviewArchive, WeeklyChampionArchive, WeeklyMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -19,6 +19,7 @@ async def init_db():
     print("  - pick_stats")
     print("  - session_review_archives")
     print("  - weekly_champion_archives")
+    print("  - weekly_messages")
 
     # Insert initial rows for session_reviews and draft_notes
     async with AsyncSessionLocal() as session:
@@ -35,6 +36,13 @@ async def init_db():
             draft_note = DraftNote(notes="Add your draft strategy notes here...")
             session.add(draft_note)
             print("Initial draft note created")
+
+        # Check if weekly message already exists
+        result = await session.execute(select(WeeklyMessage).where(WeeklyMessage.id == 1))
+        if not result.scalars().first():
+            weekly_message = WeeklyMessage(id=1, message="")
+            session.add(weekly_message)
+            print("Initial weekly message created")
 
         await session.commit()
 

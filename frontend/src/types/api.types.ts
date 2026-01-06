@@ -58,3 +58,10 @@ export interface ChampionPool {
   created_at: string
   updated_at: string
 }
+
+export interface WeeklyMessage {
+  id: number
+  message: string
+  last_updated: string
+  created_at: string
+}
