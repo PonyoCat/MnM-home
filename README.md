@@ -1,8 +1,13 @@
 # MnM dashboard
 
 A full-stack web application for tracking League of Legends team performance, draft notes, and statistics.
+This was made for my hobby league team Meeps and Maniacs to help keep organisation and management out of discord and stored in a better and more permanent way.
 
-## Overview
+
+
+
+
+## Project Overview
 
 MnM dashboard is a small full-stack app for a five-player League of Legends team. It provides four key features:
 - **Session Review Notes** - Shared notes for post-game analysis
