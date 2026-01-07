@@ -64,7 +64,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(Remove-Item \"c:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\frontend\\\\public\\\\_redirects\" -Force)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(.venvScriptspython.exe -m uvicorn app.main:app --reload)",
+      "Bash(.venvScriptsActivate.ps1)"
     ],
     "deny": []
   }

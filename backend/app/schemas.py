@@ -150,3 +150,12 @@ class WeeklyMessage(WeeklyMessageBase):
     id: int
     last_updated: datetime
     created_at: datetime
+
+# Accountability Check Schemas
+class PlayerAccountability(BaseModel):
+    """Schema for player accountability check"""
+    player_name: str
+    all_champions_played: bool
+    missing_champions: list[str]
+    total_champions: int
+    champions_played: int

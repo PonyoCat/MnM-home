@@ -141,7 +141,7 @@ export function PickStats() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Pick Statistics</CardTitle>
+        <CardTitle>First Pick Statistics</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex gap-2">

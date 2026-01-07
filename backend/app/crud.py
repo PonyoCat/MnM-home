@@ -233,9 +233,10 @@ async def archive_weekly_champions(
     week_start: date
 ) -> List[models.WeeklyChampionArchive]:
     """
-    Archive all champions for a specific week and reset the data.
+    Archive all champions for a specific week and preserve champions with reset counts.
     Aggregates play counts per player/champion combination, saves to archive,
-    then deletes all weekly champion records for that week.
+    then recreates all unique champion entries with played=False for the next week.
+    This ensures champions persist week-to-week with play counts reset to 0.
     """
     # Get all champions for this week
     champions = await get_weekly_champions(db, week_start)
@@ -272,12 +273,32 @@ async def archive_weekly_champions(
     for archive in archives:
         await db.refresh(archive)
 
+    # Extract unique player/champion combinations to preserve
+    unique_combinations = set()
+    for champ in champions:
+        unique_combinations.add((champ.player_name, champ.champion_name))
+
+    # Calculate next Monday (next week's start date)
+    next_week_start = week_start + timedelta(days=7)
+
     # Delete all weekly champion records for this week (reset)
     await db.execute(
         delete(models.WeeklyChampion).where(
             models.WeeklyChampion.week_start_date == week_start
         )
     )
+    await db.commit()
+
+    # Recreate records with played=False for next week
+    for player, champion in unique_combinations:
+        new_record = models.WeeklyChampion(
+            player_name=player,
+            champion_name=champion,
+            played=False,  # Reset to 0 plays
+            week_start_date=next_week_start  # Move to next week
+        )
+        db.add(new_record)
+
     await db.commit()
 
     return archives
@@ -462,3 +483,57 @@ async def update_pick_stat_champion(
     await db.commit()
     await db.refresh(stat)
     return stat
+
+# Accountability Check CRUD
+async def get_accountability_check(db: AsyncSession) -> List[dict]:
+    """
+    Check if each player has played at least 1 game on all their champions.
+    Returns a list of players with their accountability status.
+    """
+    # Get all distinct players
+    players_result = await db.execute(
+        select(models.ChampionPool.player_name).distinct()
+    )
+    players = [row[0] for row in players_result.all()]
+
+    accountability_data = []
+
+    for player in players:
+        # Get all champions for this player
+        champions_result = await db.execute(
+            select(models.ChampionPool).where(
+                models.ChampionPool.player_name == player
+            )
+        )
+        champions = list(champions_result.scalars().all())
+
+        # Check each champion for games played
+        missing_champions = []
+        for champ in champions:
+            # Check if this champion has any games in pick_stats
+            stat_result = await db.execute(
+                select(models.PickStat).where(
+                    models.PickStat.champion_name == champ.champion_name
+                )
+            )
+            stat = stat_result.scalars().first()
+
+            # If no stat exists or no games played, add to missing
+            if not stat or stat.first_pick_games == 0:
+                missing_champions.append(champ.champion_name)
+
+        # Player is accountable if they have no missing champions
+        all_champions_played = len(missing_champions) == 0
+
+        accountability_data.append({
+            "player_name": player,
+            "all_champions_played": all_champions_played,
+            "missing_champions": missing_champions,
+            "total_champions": len(champions),
+            "champions_played": len(champions) - len(missing_champions)
+        })
+
+    # Sort by player name
+    accountability_data.sort(key=lambda x: x["player_name"])
+
+    return accountability_data

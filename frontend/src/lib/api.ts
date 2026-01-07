@@ -369,6 +369,17 @@ export const api = {
       console.error('Failed to update weekly message:', error)
       throw error
     }
+  },
+
+  // Accountability Check
+  async getAccountabilityCheck() {
+    try {
+      const response = await apiFetch('/api/accountability/check')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch accountability check:', error)
+      throw error
+    }
   }
 }
 

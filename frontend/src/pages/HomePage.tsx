@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { WeeklyChampions } from '@/components/WeeklyChampions'
 import { WeeklyMessage } from '@/components/WeeklyMessage'
+import { AccountabilityCheck } from '@/components/AccountabilityCheck'
 import { RefreshCw } from 'lucide-react'
 
 export function HomePage() {
@@ -26,9 +27,13 @@ export function HomePage() {
         </Button>
       </div>
 
-      <div key={reloadKey} className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <WeeklyChampions />
-        <WeeklyMessage />
+      <div key={reloadKey} className="space-y-8">
+        <AccountabilityCheck />
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <WeeklyChampions />
+          <WeeklyMessage />
+        </div>
       </div>
     </div>
   )
