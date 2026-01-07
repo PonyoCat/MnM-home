@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
+import { Button } from './ui/button'
 import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import { Check, X, ChevronDown, ChevronRight } from 'lucide-react'
@@ -19,10 +20,23 @@ interface PlayerAccountability {
   champion_details: ChampionDetail[]
 }
 
+function getCurrentWeekStart(): string {
+  const now = new Date()
+  const dayOfWeek = now.getDay()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+  return monday.toISOString().split('T')[0]
+}
+
+function isCurrentWeek(weekStart: string): boolean {
+  return weekStart === getCurrentWeekStart()
+}
+
 export function AccountabilityCheck() {
   const [accountabilityData, setAccountabilityData] = useState<PlayerAccountability[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekStart())
 
   // NEW: Track expanded state per player (mirror WeeklyChampions.tsx pattern)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
@@ -31,13 +45,13 @@ export function AccountabilityCheck() {
 
   useEffect(() => {
     loadAccountability()
-  }, [])
+  }, [selectedWeek])
 
   async function loadAccountability() {
     try {
       setLoading(true)
       setError(null)
-      const data = await api.getAccountabilityCheck()
+      const data = await api.getAccountabilityCheck(selectedWeek)
       setAccountabilityData(data)
     } catch (error) {
       console.error('Error loading accountability check:', error)
@@ -45,6 +59,13 @@ export function AccountabilityCheck() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function navigateWeek(dayOffset: number) {
+    const currentWeekDate = new Date(selectedWeek)
+    const newWeekDate = new Date(currentWeekDate)
+    newWeekDate.setDate(currentWeekDate.getDate() + dayOffset)
+    setSelectedWeek(newWeekDate.toISOString().split('T')[0])
   }
 
   // NEW: Toggle expansion for a player
@@ -66,7 +87,37 @@ export function AccountabilityCheck() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Accountability Check</CardTitle>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <CardTitle>Accountability Check</CardTitle>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm text-muted-foreground">Week of {selectedWeek}</span>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigateWeek(-7)}
+              >
+                Previous Week
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedWeek(getCurrentWeekStart())}
+                disabled={isCurrentWeek(selectedWeek)}
+              >
+                Current Week
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigateWeek(7)}
+                disabled={isCurrentWeek(selectedWeek)}
+              >
+                Next Week
+              </Button>
+            </div>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">

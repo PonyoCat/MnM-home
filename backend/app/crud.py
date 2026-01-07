@@ -1,7 +1,7 @@
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
-from typing import List
+from typing import List, Optional
 from datetime import date
 
 # Session Review CRUD
@@ -485,17 +485,21 @@ async def update_pick_stat_champion(
     return stat
 
 # Accountability Check CRUD
-async def get_accountability_check(db: AsyncSession) -> List[dict]:
+async def get_accountability_check(
+    db: AsyncSession,
+    week_start: Optional[date] = None
+) -> List[dict]:
     """
-    Check if each player has played at least 1 game on all their champions this week.
+    Check if each player has played at least 1 game on all their champions for a given week.
     Returns accountability status for all 5 players.
     """
     from datetime import datetime, timedelta
 
-    # Calculate current week start (Monday)
-    now = datetime.now().date()
-    day_of_week = now.weekday()  # 0=Monday, 6=Sunday
-    week_start = now - timedelta(days=day_of_week)
+    # Calculate current week start (Monday) if not provided
+    if week_start is None:
+        now = datetime.now().date()
+        day_of_week = now.weekday()  # 0=Monday, 6=Sunday
+        week_start = now - timedelta(days=day_of_week)
 
     # IMPORTANT: Always return all 5 players
     PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']

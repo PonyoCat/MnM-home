@@ -372,9 +372,12 @@ export const api = {
   },
 
   // Accountability Check
-  async getAccountabilityCheck() {
+  async getAccountabilityCheck(weekStart?: string) {
     try {
-      const response = await apiFetch('/api/accountability/check')
+      const endpoint = weekStart
+        ? `/api/accountability/check?week_start=${weekStart}`
+        : '/api/accountability/check'
+      const response = await apiFetch(endpoint)
       return response.json()
     } catch (error) {
       console.error('Failed to fetch accountability check:', error)
