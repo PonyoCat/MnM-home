@@ -19,6 +19,7 @@ interface WeeklyChampionEntry {
   champion_name: string
   played: boolean
   week_start_date: string
+  archived_at?: string | null
 }
 
 interface DebugData {
@@ -132,6 +133,7 @@ export function AccountabilityDebug() {
                         <th className="text-left p-2">Player</th>
                         <th className="text-left p-2">Champion</th>
                         <th className="text-left p-2">Played</th>
+                        <th className="text-left p-2">Status</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -146,11 +148,20 @@ export function AccountabilityDebug() {
                               <span className="text-muted-foreground">Not played</span>
                             )}
                           </td>
+                          <td className="p-2">
+                            {entry.archived_at ? (
+                              <span className="text-xs text-muted-foreground">
+                                Archived: {new Date(entry.archived_at).toLocaleDateString()}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-green-600 font-medium">Active</span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                       {debugData.weekly_champions.length === 0 && (
                         <tr>
-                          <td colSpan={3} className="p-4 text-center text-muted-foreground">
+                          <td colSpan={4} className="p-4 text-center text-muted-foreground">
                             No weekly champion entries found for this week
                           </td>
                         </tr>

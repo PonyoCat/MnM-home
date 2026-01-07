@@ -119,8 +119,8 @@ export function AccountabilityCheck() {
           </div>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
+      <CardContent className="space-y-2 p-4">
+        <div className="space-y-2">
           {accountabilityData.map((player) => (
             <div key={player.player_name} className="space-y-2">
               {/* Player summary - clickable to expand */}
@@ -154,13 +154,6 @@ export function AccountabilityCheck() {
                     </div>
                   </div>
                 </div>
-
-                {/* Missing champions summary */}
-                {!player.all_champions_played && player.missing_champions.length > 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    Missing: {player.missing_champions.join(', ')}
-                  </div>
-                )}
               </div>
 
               {/* NEW: Expanded champion details */}

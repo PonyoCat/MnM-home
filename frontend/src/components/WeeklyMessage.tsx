@@ -63,7 +63,6 @@ export function WeeklyMessage() {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Add a message for the team this week..."
-          className="min-h-[200px]"
           disabled={isSaving}
         />
         <div className="flex justify-end">

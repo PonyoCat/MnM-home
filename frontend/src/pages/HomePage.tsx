@@ -29,15 +29,21 @@ export function HomePage() {
       </div>
 
       <div key={reloadKey} className="space-y-8">
-        <AccountabilityCheck />
+        {/* Weekly Message at top (full width, auto-scale height) */}
+        <WeeklyMessage />
 
-        {/* NEW: Database verification component */}
-        <AccountabilityDebug />
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <WeeklyChampions />
-          <WeeklyMessage />
+        {/* 3/5 + 2/5 grid on large screens, stack on mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+          <div className="lg:col-span-3">
+            <WeeklyChampions />
+          </div>
+          <div className="lg:col-span-2">
+            <AccountabilityCheck />
+          </div>
         </div>
+
+        {/* Database verification at bottom (full width) */}
+        <AccountabilityDebug />
       </div>
     </div>
   )

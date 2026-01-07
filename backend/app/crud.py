@@ -645,7 +645,8 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
                 "player_name": w.player_name,
                 "champion_name": w.champion_name,
                 "played": w.played,
-                "week_start_date": w.week_start_date.isoformat()
+                "week_start_date": w.week_start_date.isoformat(),
+                "archived_at": w.archived_at.isoformat() if w.archived_at else None
             }
             for w in weekly_champions
         ]
