@@ -27,6 +27,8 @@ LeagueClientIdea.md
 
 # MCP config (contains API keys)
 .mcp.json
+NEON_MCP_STDIO.md
+scripts/neon-mcp-stdio.js
 
 # Render doesn't use _redirects files (Netlify-specific)
 frontend/public/_redirects

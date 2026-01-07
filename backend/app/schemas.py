@@ -37,6 +37,7 @@ class WeeklyChampion(WeeklyChampionBase):
 
     id: int
     created_at: datetime
+    archived_at: Optional[datetime] = None
 
 # Draft Note Schemas
 class DraftNoteBase(BaseModel):

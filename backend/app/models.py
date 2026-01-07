@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime, func
+from sqlalchemy import Column, Integer, String, Text, Boolean, Date, DateTime, func, Index
 from .database import Base
 
 class SessionReview(Base):
@@ -11,6 +11,15 @@ class SessionReview(Base):
 
 class WeeklyChampion(Base):
     __tablename__ = "weekly_champions"
+    __table_args__ = (
+        Index(
+            "ix_weekly_champions_week_start_player_champion_archived_at",
+            "week_start_date",
+            "player_name",
+            "champion_name",
+            "archived_at",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     player_name = Column(String(255), nullable=False)
@@ -18,6 +27,7 @@ class WeeklyChampion(Base):
     played = Column(Boolean, default=False)
     week_start_date = Column(Date, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    archived_at = Column(DateTime(timezone=True), nullable=True, index=True)
 
 class DraftNote(Base):
     __tablename__ = "draft_notes"

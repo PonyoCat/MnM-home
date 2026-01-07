@@ -12,6 +12,7 @@ export interface WeeklyChampion {
   played: boolean
   week_start_date: string
   created_at: string
+  archived_at: string | null
 }
 
 export interface DraftNote {

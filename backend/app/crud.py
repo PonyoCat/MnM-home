@@ -1,8 +1,15 @@
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime, timedelta
+
+
+def _get_week_start(target_date: Optional[date] = None) -> date:
+    """Return the Monday of the target date's week."""
+    if target_date is None:
+        target_date = datetime.now().date()
+    return target_date - timedelta(days=target_date.weekday())
 
 # Session Review CRUD
 async def get_session_review(db: AsyncSession) -> models.SessionReview:
@@ -29,9 +36,16 @@ async def update_session_review(db: AsyncSession, notes: str) -> models.SessionR
 # Weekly Champion CRUD
 async def get_weekly_champions(db: AsyncSession, week_start: date) -> List[models.WeeklyChampion]:
     """Get all weekly champions for a specific week"""
-    result = await db.execute(
-        select(models.WeeklyChampion).where(models.WeeklyChampion.week_start_date == week_start)
+    current_week_start = _get_week_start()
+    query = select(models.WeeklyChampion).where(
+        models.WeeklyChampion.week_start_date == week_start
     )
+
+    # Active weeks should ignore archived rows; historical weeks return all records
+    if week_start >= current_week_start:
+        query = query.where(models.WeeklyChampion.archived_at.is_(None))
+
+    result = await db.execute(query)
     return result.scalars().all()
 
 async def upsert_weekly_champion(
@@ -45,7 +59,8 @@ async def upsert_weekly_champion(
                 models.WeeklyChampion.player_name == champion_data.player_name,
                 models.WeeklyChampion.champion_name == champion_data.champion_name,
                 models.WeeklyChampion.week_start_date == champion_data.week_start_date,
-                models.WeeklyChampion.played == True
+                models.WeeklyChampion.played == True,
+                models.WeeklyChampion.archived_at.is_(None)
             ).limit(1)
         )
         champion = result.scalars().first()
@@ -63,7 +78,8 @@ async def upsert_weekly_champion(
                 models.WeeklyChampion.player_name == champion_data.player_name,
                 models.WeeklyChampion.champion_name == champion_data.champion_name,
                 models.WeeklyChampion.week_start_date == champion_data.week_start_date,
-                models.WeeklyChampion.played == False
+                models.WeeklyChampion.played == False,
+                models.WeeklyChampion.archived_at.is_(None)
             ).limit(1)
         )
         existing_unplayed = result.scalars().first()
@@ -73,7 +89,7 @@ async def upsert_weekly_champion(
             return existing_unplayed
 
     # Create a new record for played=true or if no record exists yet
-    champion = models.WeeklyChampion(**champion_data.dict())
+    champion = models.WeeklyChampion(**champion_data.dict(), archived_at=None)
     db.add(champion)
 
     await db.commit()
@@ -235,11 +251,18 @@ async def archive_weekly_champions(
     """
     Archive all champions for a specific week and preserve champions with reset counts.
     Aggregates play counts per player/champion combination, saves to archive,
-    then recreates all unique champion entries with played=False for the next week.
-    This ensures champions persist week-to-week with play counts reset to 0.
+    marks the week's rows as archived, then recreates unique champion entries
+    with played=False for the next week. This ensures champions persist week-to-week
+    with play counts reset to 0 without deleting historical rows.
     """
-    # Get all champions for this week
-    champions = await get_weekly_champions(db, week_start)
+    # Get all active champions for this week
+    champions_result = await db.execute(
+        select(models.WeeklyChampion).where(
+            models.WeeklyChampion.week_start_date == week_start,
+            models.WeeklyChampion.archived_at.is_(None)
+        )
+    )
+    champions = list(champions_result.scalars().all())
 
     # Group by player and champion, count plays
     from collections import defaultdict
@@ -251,7 +274,6 @@ async def archive_weekly_champions(
             aggregated[key] += 1
 
     # Calculate week end date (Sunday)
-    from datetime import timedelta
     week_end = week_start + timedelta(days=6)
 
     # Create archive records
@@ -281,11 +303,14 @@ async def archive_weekly_champions(
     # Calculate next Monday (next week's start date)
     next_week_start = week_start + timedelta(days=7)
 
-    # Delete all weekly champion records for this week (reset)
+    # Mark all weekly champion records for this week as archived (non-destructive reset)
     await db.execute(
-        delete(models.WeeklyChampion).where(
-            models.WeeklyChampion.week_start_date == week_start
+        update(models.WeeklyChampion)
+        .where(
+            models.WeeklyChampion.week_start_date == week_start,
+            models.WeeklyChampion.archived_at.is_(None)
         )
+        .values(archived_at=func.now())
     )
     await db.commit()
 
@@ -295,7 +320,8 @@ async def archive_weekly_champions(
             player_name=player,
             champion_name=champion,
             played=False,  # Reset to 0 plays
-            week_start_date=next_week_start  # Move to next week
+            week_start_date=next_week_start,  # Move to next week
+            archived_at=None
         )
         db.add(new_record)
 
@@ -329,7 +355,8 @@ async def delete_weekly_champion(
         select(models.WeeklyChampion).where(
             models.WeeklyChampion.player_name == player_name,
             models.WeeklyChampion.champion_name == champion_name,
-            models.WeeklyChampion.week_start_date == week_start
+            models.WeeklyChampion.week_start_date == week_start,
+            models.WeeklyChampion.archived_at.is_(None)
         )
     )
     champions = list(result.scalars().all())
@@ -353,7 +380,8 @@ async def delete_one_weekly_champion_instance(
             models.WeeklyChampion.player_name == player_name,
             models.WeeklyChampion.champion_name == champion_name,
             models.WeeklyChampion.week_start_date == week_start,
-            models.WeeklyChampion.played == played
+            models.WeeklyChampion.played == played,
+            models.WeeklyChampion.archived_at.is_(None)
         ).limit(1)
     )
     champion = result.scalars().first()
@@ -493,13 +521,9 @@ async def get_accountability_check(
     Check if each player has played at least 1 game on all their champions for a given week.
     Returns accountability status for all 5 players.
     """
-    from datetime import datetime, timedelta
-
-    # Calculate current week start (Monday) if not provided
-    if week_start is None:
-        now = datetime.now().date()
-        day_of_week = now.weekday()  # 0=Monday, 6=Sunday
-        week_start = now - timedelta(days=day_of_week)
+    # Calculate target week start (Monday) if not provided
+    current_week_start = _get_week_start()
+    target_week_start = week_start or current_week_start
 
     # IMPORTANT: Always return all 5 players
     PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
@@ -533,14 +557,18 @@ async def get_accountability_check(
 
         for champ in champions:
             # CORRECT: Check weekly_champions table for current week
-            weekly_result = await db.execute(
-                select(models.WeeklyChampion).where(
-                    models.WeeklyChampion.player_name == player,
-                    models.WeeklyChampion.champion_name == champ.champion_name,
-                    models.WeeklyChampion.week_start_date == week_start,
-                    models.WeeklyChampion.played == True  # Only count played games
-                )
-            )
+            conditions = [
+                models.WeeklyChampion.player_name == player,
+                models.WeeklyChampion.champion_name == champ.champion_name,
+                models.WeeklyChampion.week_start_date == target_week_start,
+                models.WeeklyChampion.played == True  # Only count played games
+            ]
+
+            # For the active/current week, exclude archived rows
+            if target_week_start >= current_week_start:
+                conditions.append(models.WeeklyChampion.archived_at.is_(None))
+
+            weekly_result = await db.execute(select(models.WeeklyChampion).where(*conditions))
             weekly_games = list(weekly_result.scalars().all())
 
             # Has played if at least 1 game this week
@@ -575,12 +603,8 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
     Get raw database data for accountability debugging.
     Returns champion pools and weekly champions for current week.
     """
-    from datetime import datetime, timedelta
-
     # Calculate current week start
-    now = datetime.now().date()
-    day_of_week = now.weekday()
-    week_start = now - timedelta(days=day_of_week)
+    week_start = _get_week_start()
 
     # Get all champion pool entries
     pools_result = await db.execute(
@@ -594,7 +618,8 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
     # Get all weekly champions for current week
     weekly_result = await db.execute(
         select(models.WeeklyChampion).where(
-            models.WeeklyChampion.week_start_date == week_start
+            models.WeeklyChampion.week_start_date == week_start,
+            models.WeeklyChampion.archived_at.is_(None)
         ).order_by(
             models.WeeklyChampion.player_name,
             models.WeeklyChampion.champion_name
