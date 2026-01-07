@@ -15,6 +15,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel
 } from './ui/alert-dialog'
+import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import type { ChampionPool } from '@/types/api.types'
 
@@ -25,6 +26,7 @@ export function ChampionPoolList() {
     Alex: [], Hans: [], Elias: [], Mikkel: [], Sinus: []
   })
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
     Alex: false, Hans: false, Elias: false, Mikkel: false, Sinus: false
   })
@@ -57,6 +59,8 @@ export function ChampionPoolList() {
 
   async function loadPools() {
     try {
+      setLoading(true)
+      setError(null)
       const data = await api.getChampionPools()
       const grouped = PLAYERS.reduce((acc, player) => {
         acc[player] = data.filter((p: ChampionPool) => p.player_name === player)
@@ -65,6 +69,7 @@ export function ChampionPoolList() {
       setPlayerPools(grouped)
     } catch (error) {
       console.error('Error loading champion pools:', error)
+      setError(error as Error)
     } finally {
       setLoading(false)
     }
@@ -135,8 +140,12 @@ export function ChampionPoolList() {
     setExpandedPlayers(prev => ({ ...prev, [player]: !prev[player] }))
   }
 
-  if (loading) {
-    return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
+  if (loading && !error) {
+    return <LoadingState componentName="champion pools" />
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={loadPools} componentName="champion pools" />
   }
 
   return (

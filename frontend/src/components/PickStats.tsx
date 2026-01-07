@@ -21,6 +21,7 @@ import {
   DialogTitle,
   DialogFooter
 } from './ui/dialog'
+import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import type { PickStat } from '@/types/api.types'
 
@@ -30,6 +31,7 @@ export function PickStats() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [championToDelete, setChampionToDelete] = useState<PickStat | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [editingStat, setEditingStat] = useState<PickStat | null>(null)
   const [editChampionName, setEditChampionName] = useState('')
@@ -42,6 +44,8 @@ export function PickStats() {
 
   async function loadStats() {
     try {
+      setLoading(true)
+      setError(null)
       const data = await api.getPickStats()
       const sorted = sortBy === 'win_rate'
         ? data.sort((a: PickStat, b: PickStat) => b.win_rate - a.win_rate)
@@ -49,6 +53,7 @@ export function PickStats() {
       setStats(sorted)
     } catch (error) {
       console.error('Error loading pick stats:', error)
+      setError(error as Error)
     } finally {
       setLoading(false)
     }
@@ -125,8 +130,12 @@ export function PickStats() {
     stat.champion_name.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  if (loading) {
-    return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
+  if (loading && !error) {
+    return <LoadingState componentName="pick statistics" />
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={loadStats} componentName="pick statistics" />
   }
 
   return (

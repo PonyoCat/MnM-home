@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from './ui/alert-dialog'
+import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import type { WeeklyChampion } from '@/types/api.types'
 
@@ -36,6 +37,7 @@ export function WeeklyChampions() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('')
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
     Alex: false, Hans: false, Elias: false, Mikkel: false, Sinus: false
   })
@@ -47,6 +49,8 @@ export function WeeklyChampions() {
 
   async function loadChampions() {
     try {
+      setLoading(true)
+      setError(null)
       const data = await api.getWeeklyChampions(weekStart)
       const grouped = PLAYERS.reduce((acc, player) => {
         acc[player] = data.filter((c: WeeklyChampion) => c.player_name === player)
@@ -55,6 +59,7 @@ export function WeeklyChampions() {
       setPlayerChampions(grouped)
     } catch (error) {
       console.error('Error loading weekly games:', error)
+      setError(error as Error)
     } finally {
       setLoading(false)
     }
@@ -167,8 +172,12 @@ export function WeeklyChampions() {
     }))
   }
 
-  if (loading) {
-    return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
+  if (loading && !error) {
+    return <LoadingState componentName="weekly games" />
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={loadChampions} componentName="weekly games" />
   }
 
   const allChampions = getAllChampions()

@@ -1,28 +1,65 @@
+import { withRetry, fetchWithTimeout } from './retry'
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+// Helper function to make API calls with retry logic and timeout
+async function apiFetch(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  return withRetry(async () => {
+    const response = await fetchWithTimeout(
+      `${API_URL}${endpoint}`,
+      options,
+      10000 // 10 second timeout
+    )
+
+    if (!response.ok) {
+      // Throw error with status for better error handling
+      const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
+      ;(error as any).status = response.status
+      throw error
+    }
+
+    return response
+  })
+}
 
 export const api = {
   // Session Review
   async getSessionReview() {
-    const response = await fetch(`${API_URL}/api/session-review`)
-    if (!response.ok) throw new Error('Failed to fetch session review')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/session-review')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch session review:', error)
+      throw error
+    }
   },
 
   async updateSessionReview(notes: string) {
-    const response = await fetch(`${API_URL}/api/session-review`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes })
-    })
-    if (!response.ok) throw new Error('Failed to update session review')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/session-review', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update session review:', error)
+      throw error
+    }
   },
 
   // Weekly Games
   async getWeeklyChampions(weekStart: string) {
-    const response = await fetch(`${API_URL}/api/weekly-champions?week_start=${weekStart}`)
-    if (!response.ok) throw new Error('Failed to fetch weekly games')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/weekly-champions?week_start=${weekStart}`)
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch weekly games:', error)
+      throw error
+    }
   },
 
   async toggleWeeklyChampion(data: {
@@ -31,163 +68,230 @@ export const api = {
     played: boolean
     week_start_date: string
   }) {
-    const response = await fetch(`${API_URL}/api/weekly-champions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
-    if (!response.ok) throw new Error('Failed to add game')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/weekly-champions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to add game:', error)
+      throw error
+    }
   },
 
   // Draft Notes
   async getDraftNotes() {
-    const response = await fetch(`${API_URL}/api/draft-notes`)
-    if (!response.ok) throw new Error('Failed to fetch draft notes')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/draft-notes')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch draft notes:', error)
+      throw error
+    }
   },
 
   async updateDraftNotes(notes: string) {
-    const response = await fetch(`${API_URL}/api/draft-notes`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes })
-    })
-    if (!response.ok) throw new Error('Failed to update draft notes')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/draft-notes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update draft notes:', error)
+      throw error
+    }
   },
 
   // Pick Stats
   async getPickStats() {
-    const response = await fetch(`${API_URL}/api/pick-stats`)
-    if (!response.ok) throw new Error('Failed to fetch pick stats')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/pick-stats')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch pick stats:', error)
+      throw error
+    }
   },
 
   async createPickStat(championName: string) {
-    const response = await fetch(`${API_URL}/api/pick-stats`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ champion_name: championName })
-    })
-    if (!response.ok) throw new Error('Failed to create pick stat')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/pick-stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ champion_name: championName })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to create pick stat:', error)
+      throw error
+    }
   },
 
   async addWin(id: number) {
-    const response = await fetch(`${API_URL}/api/pick-stats/${id}/win`, {
-      method: 'PATCH'
-    })
-    if (!response.ok) throw new Error('Failed to add win')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/pick-stats/${id}/win`, {
+        method: 'PATCH'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to add win:', error)
+      throw error
+    }
   },
 
   async addLoss(id: number) {
-    const response = await fetch(`${API_URL}/api/pick-stats/${id}/loss`, {
-      method: 'PATCH'
-    })
-    if (!response.ok) throw new Error('Failed to add loss')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/pick-stats/${id}/loss`, {
+        method: 'PATCH'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to add loss:', error)
+      throw error
+    }
   },
 
   async deletePickStat(id: number) {
-    const response = await fetch(`${API_URL}/api/pick-stats/${id}`, {
-      method: 'DELETE'
-    })
-    if (!response.ok) throw new Error('Failed to delete pick stat')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/pick-stats/${id}`, {
+        method: 'DELETE'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to delete pick stat:', error)
+      throw error
+    }
   },
 
   async updatePickStatChampion(id: number, championName: string) {
-    const response = await fetch(`${API_URL}/api/pick-stats/${id}/champion`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ champion_name: championName })
-    })
-    if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.detail || 'Failed to update champion name')
+    try {
+      const response = await apiFetch(`/api/pick-stats/${id}/champion`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ champion_name: championName })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update champion name:', error)
+      throw error
     }
-    return response.json()
   },
 
   // Session Review Archives
   async createSessionReviewArchive(title: string, notes: string, originalDate?: string) {
-    const response = await fetch(`${API_URL}/api/session-review/archive`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, notes, original_date: originalDate })
-    })
-    if (!response.ok) throw new Error('Failed to create archive')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/session-review/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, notes, original_date: originalDate })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to create archive:', error)
+      throw error
+    }
   },
 
   async getSessionReviewArchives() {
-    const response = await fetch(`${API_URL}/api/session-review/archives`)
-    if (!response.ok) throw new Error('Failed to fetch archives')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/session-review/archives')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch archives:', error)
+      throw error
+    }
   },
 
   async getSessionReviewArchive(id: number) {
-    const response = await fetch(`${API_URL}/api/session-review/archives/${id}`)
-    if (!response.ok) throw new Error('Failed to fetch archive')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/session-review/archives/${id}`)
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch archive:', error)
+      throw error
+    }
   },
 
   async updateSessionReviewArchive(id: number, title?: string, notes?: string) {
-    const response = await fetch(`${API_URL}/api/session-review/archives/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, notes })
-    })
-    if (!response.ok) throw new Error('Failed to update archive')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/session-review/archives/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, notes })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update archive:', error)
+      throw error
+    }
   },
 
   // Weekly Games Additional Methods
   async deleteWeeklyChampion(playerName: string, championName: string, weekStart: string) {
-    const response = await fetch(
-      `${API_URL}/api/weekly-champions?player_name=${encodeURIComponent(playerName)}&champion_name=${encodeURIComponent(championName)}&week_start=${weekStart}`,
-      { method: 'DELETE' }
-    )
-    if (!response.ok) throw new Error('Failed to delete champion')
-    return
+    try {
+      await apiFetch(
+        `/api/weekly-champions?player_name=${encodeURIComponent(playerName)}&champion_name=${encodeURIComponent(championName)}&week_start=${weekStart}`,
+        { method: 'DELETE' }
+      )
+    } catch (error) {
+      console.error('Failed to delete champion:', error)
+      throw error
+    }
   },
 
   async deleteOneWeeklyChampionInstance(playerName: string, championName: string, weekStart: string, played: boolean = true) {
-    const response = await fetch(
-      `${API_URL}/api/weekly-champions/instance?player_name=${encodeURIComponent(playerName)}&champion_name=${encodeURIComponent(championName)}&week_start=${weekStart}&played=${played}`,
-      { method: 'DELETE' }
-    )
-    if (!response.ok) throw new Error('Failed to delete game instance')
-    return
+    try {
+      await apiFetch(
+        `/api/weekly-champions/instance?player_name=${encodeURIComponent(playerName)}&champion_name=${encodeURIComponent(championName)}&week_start=${weekStart}&played=${played}`,
+        { method: 'DELETE' }
+      )
+    } catch (error) {
+      console.error('Failed to delete game instance:', error)
+      throw error
+    }
   },
 
   async archiveWeeklyChampions(weekStart: string) {
-    const response = await fetch(`${API_URL}/api/weekly-champions/archive?week_start=${weekStart}`, {
-      method: 'POST'
-    })
-    if (!response.ok) throw new Error('Failed to archive weekly games')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/weekly-champions/archive?week_start=${weekStart}`, {
+        method: 'POST'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to archive weekly games:', error)
+      throw error
+    }
   },
 
   async getWeeklyChampionArchives(playerName?: string) {
-    const url = playerName
-      ? `${API_URL}/api/weekly-champions/archives?player_name=${encodeURIComponent(playerName)}`
-      : `${API_URL}/api/weekly-champions/archives`
-    const response = await fetch(url)
-    if (!response.ok) throw new Error('Failed to fetch game archives')
-    return response.json()
+    try {
+      const endpoint = playerName
+        ? `/api/weekly-champions/archives?player_name=${encodeURIComponent(playerName)}`
+        : `/api/weekly-champions/archives`
+      const response = await apiFetch(endpoint)
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch game archives:', error)
+      throw error
+    }
   },
 
   // Champion Pool
   async getChampionPools(playerName?: string) {
-    const url = playerName
-      ? `${API_URL}/api/champion-pool?player_name=${encodeURIComponent(playerName)}`
-      : `${API_URL}/api/champion-pool`
-    const response = await fetch(url)
-    if (!response.ok) throw new Error('Failed to fetch champion pools')
-    return response.json()
+    try {
+      const endpoint = playerName
+        ? `/api/champion-pool?player_name=${encodeURIComponent(playerName)}`
+        : `/api/champion-pool`
+      const response = await apiFetch(endpoint)
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch champion pools:', error)
+      throw error
+    }
   },
 
   async createChampionPool(data: {
@@ -196,13 +300,17 @@ export const api = {
     description: string
     pick_priority: string
   }) {
-    const response = await fetch(`${API_URL}/api/champion-pool`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
-    if (!response.ok) throw new Error('Failed to create champion pool entry')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/champion-pool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to create champion pool entry:', error)
+      throw error
+    }
   },
 
   async updateChampionPool(
@@ -213,38 +321,54 @@ export const api = {
       pick_priority?: string
     }
   ) {
-    const response = await fetch(`${API_URL}/api/champion-pool/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    })
-    if (!response.ok) throw new Error('Failed to update champion pool entry')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/champion-pool/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update champion pool entry:', error)
+      throw error
+    }
   },
 
   async deleteChampionPool(id: number) {
-    const response = await fetch(`${API_URL}/api/champion-pool/${id}`, {
-      method: 'DELETE'
-    })
-    if (!response.ok) throw new Error('Failed to delete champion pool entry')
-    return response.json()
+    try {
+      const response = await apiFetch(`/api/champion-pool/${id}`, {
+        method: 'DELETE'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to delete champion pool entry:', error)
+      throw error
+    }
   },
 
   // Weekly Message
   async getWeeklyMessage() {
-    const response = await fetch(`${API_URL}/api/weekly-message`)
-    if (!response.ok) throw new Error('Failed to fetch weekly message')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/weekly-message')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch weekly message:', error)
+      throw error
+    }
   },
 
   async updateWeeklyMessage(message: string) {
-    const response = await fetch(`${API_URL}/api/weekly-message`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message })
-    })
-    if (!response.ok) throw new Error('Failed to update weekly message')
-    return response.json()
+    try {
+      const response = await apiFetch('/api/weekly-message', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update weekly message:', error)
+      throw error
+    }
   }
 }
 

@@ -24,3 +24,9 @@ LeagueClientIdea.md
 
 # Env
 .env
+
+# MCP config (contains API keys)
+.mcp.json
+
+# Render doesn't use _redirects files (Netlify-specific)
+frontend/public/_redirects

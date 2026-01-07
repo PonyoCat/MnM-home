@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
+import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import type { DraftNote } from '@/types/api.types'
 
@@ -9,6 +10,7 @@ export function DraftNotes() {
   const [notes, setNotes] = useState('')
   const [lastUpdated, setLastUpdated] = useState('')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
     loadNotes()
@@ -16,11 +18,14 @@ export function DraftNotes() {
 
   async function loadNotes() {
     try {
+      setLoading(true)
+      setError(null)
       const data: DraftNote = await api.getDraftNotes()
       setNotes(data.notes)
       setLastUpdated(data.last_updated)
     } catch (error) {
       console.error('Error loading draft notes:', error)
+      setError(error as Error)
     } finally {
       setLoading(false)
     }
@@ -35,8 +40,12 @@ export function DraftNotes() {
     }
   }
 
-  if (loading) {
-    return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
+  if (loading && !error) {
+    return <LoadingState componentName="draft notes" />
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={loadNotes} componentName="draft notes" />
   }
 
   return (

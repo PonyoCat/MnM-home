@@ -62,7 +62,9 @@
       "Bash(claude mcp list:*)",
       "Bash(git log:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\frontend\\\\public\\\\_redirects\" -Force)",
+      "Bash(gh run list:*)"
     ],
     "deny": []
   }

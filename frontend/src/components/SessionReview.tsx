@@ -4,6 +4,7 @@ import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
+import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import type { SessionReview as SessionReviewType, SessionReviewArchive } from '@/types/api.types'
 
@@ -21,32 +22,35 @@ export function SessionReview() {
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
-    loadCurrentNotes()
-    loadArchives()
+    loadData()
   }, [])
 
-  async function loadCurrentNotes() {
+  async function loadData() {
     try {
-      const data: SessionReviewType = await api.getSessionReview()
-      setCurrentNotes(data.notes)
+      setLoading(true)
+      setError(null)
+      await Promise.all([loadCurrentNotes(), loadArchives()])
     } catch (error) {
-      console.error('Error loading session notes:', error)
+      console.error('Error loading session review data:', error)
+      setError(error as Error)
     } finally {
       setLoading(false)
     }
   }
 
+  async function loadCurrentNotes() {
+    const data: SessionReviewType = await api.getSessionReview()
+    setCurrentNotes(data.notes)
+  }
+
   async function loadArchives() {
-    try {
-      console.log('[ARCHIVE] Loading archives from API...')
-      const data = await api.getSessionReviewArchives()
-      console.log(`[ARCHIVE] Loaded ${data.length} archive(s):`, data)
-      setArchives(data)
-    } catch (error) {
-      console.error('[ARCHIVE] Error loading archives:', error)
-    }
+    console.log('[ARCHIVE] Loading archives from API...')
+    const data = await api.getSessionReviewArchives()
+    console.log(`[ARCHIVE] Loaded ${data.length} archive(s):`, data)
+    setArchives(data)
   }
 
   async function archiveNotes() {
@@ -123,8 +127,12 @@ export function SessionReview() {
     }
   }
 
-  if (loading) {
-    return <Card><CardContent className="pt-6">Loading...</CardContent></Card>
+  if (loading && !error) {
+    return <LoadingState componentName="session review" />
+  }
+
+  if (error) {
+    return <ErrorState error={error} onRetry={loadData} componentName="session review" />
   }
 
   return (
