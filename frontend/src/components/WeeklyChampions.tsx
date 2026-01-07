@@ -1,20 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
-import { Input } from './ui/input'
 import { Button } from './ui/button'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog'
 import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
-import type { WeeklyChampion } from '@/types/api.types'
+import type { WeeklyChampion, ChampionPool } from '@/types/api.types'
 
 const PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 
@@ -30,12 +19,9 @@ export function WeeklyChampions() {
   const [playerChampions, setPlayerChampions] = useState<Record<string, WeeklyChampion[]>>({
     Alex: [], Hans: [], Elias: [], Mikkel: [], Sinus: []
   })
-  const [playerInputs, setPlayerInputs] = useState<Record<string, string>>({
-    Alex: '', Hans: '', Elias: '', Mikkel: '', Sinus: ''
+  const [championPools, setChampionPools] = useState<Record<string, ChampionPool[]>>({
+    Alex: [], Hans: [], Elias: [], Mikkel: [], Sinus: []
   })
-  const [championToDelete, setChampionToDelete] = useState<{player: string, champion: string} | null>(null)
-  const [deleteConfirmText, setDeleteConfirmText] = useState('')
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
@@ -44,42 +30,38 @@ export function WeeklyChampions() {
   const weekStart = getWeekStart()
 
   useEffect(() => {
-    loadChampions()
+    loadData()
   }, [])
 
-  async function loadChampions() {
+  async function loadData() {
     try {
       setLoading(true)
       setError(null)
-      const data = await api.getWeeklyChampions(weekStart)
-      const grouped = PLAYERS.reduce((acc, player) => {
-        acc[player] = data.filter((c: WeeklyChampion) => c.player_name === player)
+
+      // Fetch both champion pools and weekly champions
+      const [poolsData, championsData] = await Promise.all([
+        api.getChampionPools(),
+        api.getWeeklyChampions(weekStart)
+      ])
+
+      // Group champion pools by player
+      const groupedPools = PLAYERS.reduce((acc, player) => {
+        acc[player] = poolsData.filter((c: ChampionPool) => c.player_name === player)
+        return acc
+      }, {} as Record<string, ChampionPool[]>)
+      setChampionPools(groupedPools)
+
+      // Group weekly champions by player
+      const groupedChampions = PLAYERS.reduce((acc, player) => {
+        acc[player] = championsData.filter((c: WeeklyChampion) => c.player_name === player)
         return acc
       }, {} as Record<string, WeeklyChampion[]>)
-      setPlayerChampions(grouped)
+      setPlayerChampions(groupedChampions)
     } catch (error) {
       console.error('Error loading weekly games:', error)
       setError(error as Error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function addChampionForPlayer(player: string) {
-    const championName = playerInputs[player].trim()
-    if (!championName) return
-
-    try {
-      await api.toggleWeeklyChampion({
-        player_name: player,
-        champion_name: championName,
-        played: false,
-        week_start_date: weekStart
-      })
-      setPlayerInputs(prev => ({ ...prev, [player]: '' }))
-      await loadChampions()
-    } catch (error) {
-      console.error('Error adding game:', error)
     }
   }
 
@@ -91,7 +73,7 @@ export function WeeklyChampions() {
         played: true,
         week_start_date: weekStart
       })
-      await loadChampions()
+      await loadData()
     } catch (error) {
       console.error('Error incrementing game count:', error)
     }
@@ -113,44 +95,9 @@ export function WeeklyChampions() {
         // If count is > 1, delete one played instance
         await api.deleteOneWeeklyChampionInstance(player, championName, weekStart, true)
       }
-      await loadChampions()
+      await loadData()
     } catch (error) {
       console.error('Error decrementing game count:', error)
-    }
-  }
-
-  function getAllChampions() {
-    const allChamps: Array<{player: string, champion: string}> = []
-    PLAYERS.forEach(player => {
-      const uniqueChamps = new Set(playerChampions[player].map(c => c.champion_name))
-      uniqueChamps.forEach(champion => {
-        allChamps.push({ player, champion })
-      })
-    })
-    return allChamps
-  }
-
-  async function removeChampion() {
-    if (!championToDelete) return
-
-    const expectedText = `Delete ${championToDelete.champion}`
-    if (deleteConfirmText !== expectedText) {
-      return
-    }
-
-    try {
-      await api.deleteWeeklyChampion(
-        championToDelete.player,
-        championToDelete.champion,
-        weekStart
-      )
-
-      setDeleteDialogOpen(false)
-      setChampionToDelete(null)
-      setDeleteConfirmText('')
-      await loadChampions()
-    } catch (error) {
-      console.error('Error removing game:', error)
     }
   }
 
@@ -160,9 +107,11 @@ export function WeeklyChampions() {
     ).length
   }
 
-  function getUniqueChampions(player: string): string[] {
-    const uniqueChamps = new Set(playerChampions[player].map(c => c.champion_name))
-    return Array.from(uniqueChamps).sort((a, b) => a.localeCompare(b))
+  function getPlayerChampions(player: string): string[] {
+    // Get champions from the player's champion pool
+    return championPools[player]
+      .map(c => c.champion_name)
+      .sort((a, b) => a.localeCompare(b))
   }
 
   function togglePlayerExpanded(player: string) {
@@ -177,19 +126,18 @@ export function WeeklyChampions() {
   }
 
   if (error) {
-    return <ErrorState error={error} onRetry={loadChampions} componentName="weekly games" />
+    return <ErrorState error={error} onRetry={loadData} componentName="weekly games" />
   }
 
-  const allChampions = getAllChampions()
-
   return (
-    <>
-      <Card className="h-full flex flex-col">
-        <CardHeader>
-          <CardTitle>Weekly Games (Week of {weekStart})</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6 flex-1">
-          {PLAYERS.map(player => (
+    <Card className="h-full flex flex-col">
+      <CardHeader>
+        <CardTitle>Weekly Games (Week of {weekStart})</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6 flex-1">
+        {PLAYERS.map(player => {
+          const playerChampionList = getPlayerChampions(player)
+          return (
             <div key={player} className="space-y-2">
               <h3
                 className="font-semibold text-lg cursor-pointer hover:text-primary transition-colors flex items-center gap-2"
@@ -199,25 +147,13 @@ export function WeeklyChampions() {
                 {player}
               </h3>
               {expandedPlayers[player] && (
-                <>
-                  <div className="flex gap-2">
-                    <Input
-                      value={playerInputs[player]}
-                      onChange={(e) => setPlayerInputs(prev => ({
-                        ...prev,
-                        [player]: e.target.value
-                      }))}
-                      placeholder="Champion name..."
-                      onKeyDown={(e) =>
-                        e.key === 'Enter' && addChampionForPlayer(player)
-                      }
-                    />
-                    <Button onClick={() => addChampionForPlayer(player)}>
-                      Add
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    {getUniqueChampions(player).map(championName => {
+                <div className="space-y-2">
+                  {playerChampionList.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic px-3 py-2">
+                      No champions in pool. Add champions in the Champion Pool page.
+                    </p>
+                  ) : (
+                    playerChampionList.map(championName => {
                       const playCount = getChampionCount(player, championName)
                       return (
                         <div
@@ -247,82 +183,14 @@ export function WeeklyChampions() {
                           </div>
                         </div>
                       )
-                    })}
-                  </div>
-                </>
+                    })
+                  )}
+                </div>
               )}
             </div>
-          ))}
-          <div className="flex justify-end mt-4">
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setDeleteDialogOpen(true)
-                setChampionToDelete(null)
-                setDeleteConfirmText('')
-              }}
-              disabled={allChampions.length === 0}
-            >
-              Remove Champion
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove Champion</AlertDialogTitle>
-            <AlertDialogDescription>
-              {!championToDelete
-                ? 'Select a champion to remove. You will need to confirm by typing the champion\'s name.'
-                : `Type "Delete ${championToDelete.champion}" to confirm removal:`
-              }
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {!championToDelete ? (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {allChampions.map(({ player, champion }) => (
-                <Button
-                  key={`${player}-${champion}`}
-                  variant="outline"
-                  className="w-full justify-start"
-                  onClick={() => setChampionToDelete({ player, champion })}
-                >
-                  {player}: {champion}
-                </Button>
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <Input
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                placeholder={`Delete ${championToDelete.champion}`}
-                autoFocus
-              />
-            </div>
-          )}
-
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setChampionToDelete(null)
-              setDeleteConfirmText('')
-            }}>
-              Cancel
-            </AlertDialogCancel>
-            {championToDelete && (
-              <AlertDialogAction
-                onClick={removeChampion}
-                disabled={deleteConfirmText !== `Delete ${championToDelete.champion}`}
-              >
-                Confirm Delete
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+          )
+        })}
+      </CardContent>
+    </Card>
   )
 }
