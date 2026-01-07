@@ -186,6 +186,36 @@ async def delete_pick_stat(db: AsyncSession, pick_stat_id: int) -> bool:
 
     return False
 
+async def update_pick_stat(
+    db: AsyncSession,
+    pick_stat_id: int,
+    update_data: schemas.PickStatUpdate
+) -> Optional[models.PickStat]:
+    """Update wins and/or losses for a pick stat"""
+    result = await db.execute(select(models.PickStat).where(models.PickStat.id == pick_stat_id))
+    pick_stat = result.scalars().first()
+
+    if not pick_stat:
+        return None
+
+    # Update fields if provided
+    if update_data.first_pick_games is not None:
+        pick_stat.first_pick_games = update_data.first_pick_games
+    if update_data.first_pick_wins is not None:
+        pick_stat.first_pick_wins = update_data.first_pick_wins
+
+    await db.commit()
+    await db.refresh(pick_stat)
+
+    # Compute win_rate
+    pick_stat.win_rate = (
+        round((pick_stat.first_pick_wins / pick_stat.first_pick_games) * 100, 1)
+        if pick_stat.first_pick_games > 0
+        else 0.0
+    )
+
+    return pick_stat
+
 # Session Review Archive CRUD
 async def create_session_review_archive(
     db: AsyncSession,

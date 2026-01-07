@@ -35,6 +35,8 @@ export function PickStats() {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingStat, setEditingStat] = useState<PickStat | null>(null)
   const [editChampionName, setEditChampionName] = useState('')
+  const [editWins, setEditWins] = useState(0)
+  const [editGames, setEditGames] = useState(0)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [sortBy, setSortBy] = useState<'win_rate' | 'games'>('win_rate')
 
@@ -113,16 +115,31 @@ export function PickStats() {
   }
 
   async function handleEditChampion() {
-    if (!editingStat || !editChampionName.trim()) return
+    if (!editingStat) return
+
     try {
-      await api.updatePickStatChampion(editingStat.id, editChampionName.trim())
+      // Update champion name if changed
+      if (editChampionName.trim() && editChampionName.trim() !== editingStat.champion_name) {
+        await api.updatePickStatChampion(editingStat.id, editChampionName.trim())
+      }
+
+      // Update wins/games if changed
+      if (editWins !== editingStat.first_pick_wins || editGames !== editingStat.first_pick_games) {
+        await api.updatePickStat(editingStat.id, {
+          first_pick_wins: editWins,
+          first_pick_games: editGames
+        })
+      }
+
       setEditDialogOpen(false)
       setEditingStat(null)
       setEditChampionName('')
+      setEditWins(0)
+      setEditGames(0)
       await loadStats()
     } catch (error: any) {
       console.error('Error editing champion:', error)
-      alert(error.message || 'Failed to update champion name')
+      alert(error.message || 'Failed to update champion')
     }
   }
 
@@ -195,6 +212,8 @@ export function PickStats() {
                       onClick={() => {
                         setEditingStat(stat)
                         setEditChampionName(stat.champion_name)
+                        setEditWins(stat.first_pick_wins)
+                        setEditGames(stat.first_pick_games)
                         setEditDialogOpen(true)
                       }}
                     >
@@ -266,14 +285,39 @@ export function PickStats() {
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Edit Champion Name</DialogTitle>
+              <DialogTitle>Edit Champion Stats</DialogTitle>
             </DialogHeader>
-            <Input
-              value={editChampionName}
-              onChange={(e) => setEditChampionName(e.target.value)}
-              placeholder="Champion name..."
-              onKeyDown={(e) => e.key === 'Enter' && handleEditChampion()}
-            />
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Champion Name</label>
+                <Input
+                  value={editChampionName}
+                  onChange={(e) => setEditChampionName(e.target.value)}
+                  placeholder="Champion name..."
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Total Games</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={editGames}
+                  onChange={(e) => setEditGames(parseInt(e.target.value) || 0)}
+                  placeholder="Total games..."
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Wins</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max={editGames}
+                  value={editWins}
+                  onChange={(e) => setEditWins(Math.min(parseInt(e.target.value) || 0, editGames))}
+                  placeholder="Wins..."
+                />
+              </div>
+            </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
                 Cancel

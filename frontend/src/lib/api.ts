@@ -181,6 +181,20 @@ export const api = {
     }
   },
 
+  async updatePickStat(id: number, data: { first_pick_games?: number; first_pick_wins?: number }) {
+    try {
+      const response = await apiFetch(`/api/pick-stats/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update pick stat:', error)
+      throw error
+    }
+  },
+
   // Session Review Archives
   async createSessionReviewArchive(title: string, notes: string, originalDate?: string) {
     try {

@@ -158,27 +158,34 @@ export function AccountabilityCheck() {
 
               {/* NEW: Expanded champion details */}
               {expandedPlayers[player.player_name] && player.champion_details.length > 0 && (
-                <div className="ml-9 space-y-1 border-l-2 border-muted pl-4">
-                  {player.champion_details.map((champ) => (
-                    <div
-                      key={champ.champion_name}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      {champ.has_played ? (
-                        <Check className="w-4 h-4 text-green-500" />
-                      ) : (
-                        <X className="w-4 h-4 text-red-500" />
-                      )}
-                      <span className={champ.has_played ? 'text-foreground' : 'text-muted-foreground'}>
-                        {champ.champion_name}
-                      </span>
-                      {champ.has_played && (
-                        <span className="text-xs text-muted-foreground">
-                          ({champ.games_played} {champ.games_played === 1 ? 'game' : 'games'})
+                <div className="ml-9 space-y-2 border-l-2 border-muted pl-4">
+                  {/* Total games summary */}
+                  <div className="text-sm font-medium text-muted-foreground pb-1 border-b">
+                    Total games this week: {player.champion_details.reduce((sum, champ) => sum + champ.games_played, 0)}
+                  </div>
+                  {/* Champion breakdown */}
+                  <div className="space-y-1">
+                    {player.champion_details.map((champ) => (
+                      <div
+                        key={champ.champion_name}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        {champ.has_played ? (
+                          <Check className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <X className="w-4 h-4 text-red-500" />
+                        )}
+                        <span className={champ.has_played ? 'text-foreground' : 'text-muted-foreground'}>
+                          {champ.champion_name}
                         </span>
-                      )}
-                    </div>
-                  ))}
+                        {champ.has_played && (
+                          <span className="text-xs text-muted-foreground">
+                            ({champ.games_played} {champ.games_played === 1 ? 'game' : 'games'})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
