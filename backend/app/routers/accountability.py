@@ -15,3 +15,13 @@ async def get_accountability_check(
     Returns accountability status for all players.
     """
     return await crud.get_accountability_check(db)
+
+@router.get("/debug")
+async def get_accountability_debug_data(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get raw database data for accountability debugging.
+    Returns champion pools and weekly champions for current week.
+    """
+    return await crud.get_accountability_debug_data(db)

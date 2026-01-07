@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { WeeklyChampions } from '@/components/WeeklyChampions'
 import { WeeklyMessage } from '@/components/WeeklyMessage'
 import { AccountabilityCheck } from '@/components/AccountabilityCheck'
+import { AccountabilityDebug } from '@/components/AccountabilityDebug'
 import { RefreshCw } from 'lucide-react'
 
 export function HomePage() {
@@ -29,6 +30,9 @@ export function HomePage() {
 
       <div key={reloadKey} className="space-y-8">
         <AccountabilityCheck />
+
+        {/* NEW: Database verification component */}
+        <AccountabilityDebug />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <WeeklyChampions />

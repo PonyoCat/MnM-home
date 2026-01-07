@@ -152,6 +152,12 @@ class WeeklyMessage(WeeklyMessageBase):
     created_at: datetime
 
 # Accountability Check Schemas
+class ChampionDetail(BaseModel):
+    """Detailed status for a single champion"""
+    champion_name: str
+    has_played: bool
+    games_played: int
+
 class PlayerAccountability(BaseModel):
     """Schema for player accountability check"""
     player_name: str
@@ -159,3 +165,4 @@ class PlayerAccountability(BaseModel):
     missing_champions: list[str]
     total_champions: int
     champions_played: int
+    champion_details: list[ChampionDetail]  # NEW: For expandable UI

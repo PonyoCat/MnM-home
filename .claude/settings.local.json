@@ -66,7 +66,14 @@
       "Bash(Remove-Item \"c:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\frontend\\\\public\\\\_redirects\" -Force)",
       "Bash(gh run list:*)",
       "Bash(.venvScriptspython.exe -m uvicorn app.main:app --reload)",
-      "Bash(.venvScriptsActivate.ps1)"
+      "Bash(.venvScriptsActivate.ps1)",
+      "Bash(Test-Path \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\frontend\\\\public\\\\MnMlogo.png\")",
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\frontend\\\\public\"\" -Filter \"*.png \")",
+      "Bash(python -m pip install:*)",
+      "Bash(python fix_logo_transparency.py:*)",
+      "Bash(del frontendfix_logo_transparency.py)",
+      "Bash(git mv:*)",
+      "Bash(python -m uvicorn:*)"
     ],
     "deny": []
   }

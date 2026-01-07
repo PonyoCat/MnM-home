@@ -487,19 +487,23 @@ async def update_pick_stat_champion(
 # Accountability Check CRUD
 async def get_accountability_check(db: AsyncSession) -> List[dict]:
     """
-    Check if each player has played at least 1 game on all their champions.
-    Returns a list of players with their accountability status.
+    Check if each player has played at least 1 game on all their champions this week.
+    Returns accountability status for all 5 players.
     """
-    # Get all distinct players
-    players_result = await db.execute(
-        select(models.ChampionPool.player_name).distinct()
-    )
-    players = [row[0] for row in players_result.all()]
+    from datetime import datetime, timedelta
+
+    # Calculate current week start (Monday)
+    now = datetime.now().date()
+    day_of_week = now.weekday()  # 0=Monday, 6=Sunday
+    week_start = now - timedelta(days=day_of_week)
+
+    # IMPORTANT: Always return all 5 players
+    PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 
     accountability_data = []
 
-    for player in players:
-        # Get all champions for this player
+    for player in PLAYERS:
+        # Get all champions in this player's pool
         champions_result = await db.execute(
             select(models.ChampionPool).where(
                 models.ChampionPool.player_name == player
@@ -507,22 +511,48 @@ async def get_accountability_check(db: AsyncSession) -> List[dict]:
         )
         champions = list(champions_result.scalars().all())
 
-        # Check each champion for games played
+        # If no champion pool entries, show 0/0
+        if not champions:
+            accountability_data.append({
+                "player_name": player,
+                "all_champions_played": False,
+                "missing_champions": [],
+                "total_champions": 0,
+                "champions_played": 0,
+                "champion_details": []  # New field for detailed status
+            })
+            continue
+
+        # Check each champion for weekly games
         missing_champions = []
+        champion_details = []
+
         for champ in champions:
-            # Check if this champion has any games in pick_stats
-            stat_result = await db.execute(
-                select(models.PickStat).where(
-                    models.PickStat.champion_name == champ.champion_name
+            # CORRECT: Check weekly_champions table for current week
+            weekly_result = await db.execute(
+                select(models.WeeklyChampion).where(
+                    models.WeeklyChampion.player_name == player,
+                    models.WeeklyChampion.champion_name == champ.champion_name,
+                    models.WeeklyChampion.week_start_date == week_start,
+                    models.WeeklyChampion.played == True  # Only count played games
                 )
             )
-            stat = stat_result.scalars().first()
+            weekly_games = list(weekly_result.scalars().all())
 
-            # If no stat exists or no games played, add to missing
-            if not stat or stat.first_pick_games == 0:
+            # Has played if at least 1 game this week
+            has_played = len(weekly_games) > 0
+
+            if not has_played:
                 missing_champions.append(champ.champion_name)
 
-        # Player is accountable if they have no missing champions
+            # Add detailed status for UI expansion
+            champion_details.append({
+                "champion_name": champ.champion_name,
+                "has_played": has_played,
+                "games_played": len(weekly_games)
+            })
+
+        # Player is accountable if no missing champions
         all_champions_played = len(missing_champions) == 0
 
         accountability_data.append({
@@ -530,10 +560,64 @@ async def get_accountability_check(db: AsyncSession) -> List[dict]:
             "all_champions_played": all_champions_played,
             "missing_champions": missing_champions,
             "total_champions": len(champions),
-            "champions_played": len(champions) - len(missing_champions)
+            "champions_played": len(champions) - len(missing_champions),
+            "champion_details": champion_details  # New field
         })
 
-    # Sort by player name
-    accountability_data.sort(key=lambda x: x["player_name"])
-
     return accountability_data
+
+async def get_accountability_debug_data(db: AsyncSession) -> dict:
+    """
+    Get raw database data for accountability debugging.
+    Returns champion pools and weekly champions for current week.
+    """
+    from datetime import datetime, timedelta
+
+    # Calculate current week start
+    now = datetime.now().date()
+    day_of_week = now.weekday()
+    week_start = now - timedelta(days=day_of_week)
+
+    # Get all champion pool entries
+    pools_result = await db.execute(
+        select(models.ChampionPool).order_by(
+            models.ChampionPool.player_name,
+            models.ChampionPool.champion_name
+        )
+    )
+    champion_pools = pools_result.scalars().all()
+
+    # Get all weekly champions for current week
+    weekly_result = await db.execute(
+        select(models.WeeklyChampion).where(
+            models.WeeklyChampion.week_start_date == week_start
+        ).order_by(
+            models.WeeklyChampion.player_name,
+            models.WeeklyChampion.champion_name
+        )
+    )
+    weekly_champions = weekly_result.scalars().all()
+
+    return {
+        "week_start": week_start.isoformat(),
+        "champion_pools": [
+            {
+                "id": p.id,
+                "player_name": p.player_name,
+                "champion_name": p.champion_name,
+                "description": p.description,
+                "pick_priority": p.pick_priority
+            }
+            for p in champion_pools
+        ],
+        "weekly_champions": [
+            {
+                "id": w.id,
+                "player_name": w.player_name,
+                "champion_name": w.champion_name,
+                "played": w.played,
+                "week_start_date": w.week_start_date.isoformat()
+            }
+            for w in weekly_champions
+        ]
+    }
