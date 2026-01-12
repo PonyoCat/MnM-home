@@ -10,9 +10,12 @@ const PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 function getWeekStart(): string {
   const now = new Date()
   const dayOfWeek = now.getDay()
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
-  return monday.toISOString().split('T')[0]
+  const wednesday = new Date(now)
+  // Calculate days back to Wednesday (day 3)
+  // Wednesday=0 days, Thursday=1 day, ..., Sunday=4 days, Monday=5 days, Tuesday=6 days
+  const daysBack = (dayOfWeek - 3 + 7) % 7
+  wednesday.setDate(now.getDate() - daysBack)
+  return wednesday.toISOString().split('T')[0]
 }
 
 export function WeeklyChampions() {
@@ -132,7 +135,7 @@ export function WeeklyChampions() {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
-        <CardTitle>Weekly Games (Week of {weekStart})</CardTitle>
+        <CardTitle>Weekly Games (Week start date {weekStart})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 flex-1">
         {PLAYERS.map(player => {

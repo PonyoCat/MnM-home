@@ -6,10 +6,13 @@ from datetime import date, datetime, timedelta
 
 
 def _get_week_start(target_date: Optional[date] = None) -> date:
-    """Return the Monday of the target date's week."""
+    """Return the Wednesday of the target date's week."""
     if target_date is None:
         target_date = datetime.now().date()
-    return target_date - timedelta(days=target_date.weekday())
+    # Calculate days back to Wednesday (weekday 2)
+    # Wednesday=0 days, Thursday=1 day, ..., Sunday=4 days, Monday=5 days, Tuesday=6 days
+    days_back = (target_date.weekday() - 2 + 7) % 7
+    return target_date - timedelta(days=days_back)
 
 # Session Review CRUD
 async def get_session_review(db: AsyncSession) -> models.SessionReview:
@@ -303,7 +306,7 @@ async def archive_weekly_champions(
             key = (champ.player_name, champ.champion_name)
             aggregated[key] += 1
 
-    # Calculate week end date (Sunday)
+    # Calculate week end date (Tuesday)
     week_end = week_start + timedelta(days=6)
 
     # Create archive records
@@ -330,7 +333,7 @@ async def archive_weekly_champions(
     for champ in champions:
         unique_combinations.add((champ.player_name, champ.champion_name))
 
-    # Calculate next Monday (next week's start date)
+    # Calculate next Wednesday (next week's start date)
     next_week_start = week_start + timedelta(days=7)
 
     # Mark all weekly champion records for this week as archived (non-destructive reset)
