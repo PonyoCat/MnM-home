@@ -23,9 +23,12 @@ interface PlayerAccountability {
 function getCurrentWeekStart(): string {
   const now = new Date()
   const dayOfWeek = now.getDay()
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
-  return monday.toISOString().split('T')[0]
+  const wednesday = new Date(now)
+  // Calculate days back to Wednesday (day 3)
+  // Wednesday=0 days, Thursday=1 day, ..., Sunday=4 days, Monday=5 days, Tuesday=6 days
+  const daysBack = (dayOfWeek - 3 + 7) % 7
+  wednesday.setDate(now.getDate() - daysBack)
+  return wednesday.toISOString().split('T')[0]
 }
 
 function isCurrentWeek(weekStart: string): boolean {
@@ -90,7 +93,7 @@ export function AccountabilityCheck() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <CardTitle>Accountability Check</CardTitle>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-muted-foreground">Week of {selectedWeek}</span>
+            <span className="text-sm text-muted-foreground">Week start date {selectedWeek}</span>
             <div className="flex gap-2">
               <Button
                 size="sm"
