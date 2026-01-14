@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
@@ -64,7 +65,7 @@ export function DraftNotes() {
           <Button onClick={saveNotes}>Save</Button>
           {lastUpdated && (
             <p className="text-sm text-muted-foreground">
-              Last updated: {new Date(lastUpdated).toLocaleString()}
+              Last updated: {formatDate(lastUpdated)} {new Date(lastUpdated).toLocaleTimeString()}
             </p>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { ErrorState, LoadingState } from './ui/error-state'
 import { Button } from './ui/button'
@@ -87,7 +88,7 @@ export function AccountabilityDebug() {
             <>
               <div>
                 <div className="text-sm font-medium text-muted-foreground mb-2">
-                  Current Week: {debugData.week_start}
+                  Current Week: {formatDate(debugData.week_start)}
                 </div>
               </div>
 
@@ -124,7 +125,7 @@ export function AccountabilityDebug() {
 
               <div>
                 <h4 className="font-semibold mb-2">
-                  Weekly Champions - Week of {debugData.week_start} ({debugData.weekly_champions.length} entries)
+                  Weekly Champions - Week of {formatDate(debugData.week_start)} ({debugData.weekly_champions.length} entries)
                 </h4>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
@@ -151,7 +152,7 @@ export function AccountabilityDebug() {
                           <td className="p-2">
                             {entry.archived_at ? (
                               <span className="text-xs text-muted-foreground">
-                                Archived: {new Date(entry.archived_at).toLocaleDateString()}
+                                Archived: {formatDate(entry.archived_at!)}
                               </span>
                             ) : (
                               <span className="text-xs text-green-600 font-medium">Active</span>

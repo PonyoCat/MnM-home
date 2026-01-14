@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
@@ -11,11 +12,7 @@ import type { SessionReview as SessionReviewType, SessionReviewArchive } from '@
 export function SessionReview() {
   const [currentNotes, setCurrentNotes] = useState('')
   const [currentTitle, setCurrentTitle] = useState(() => {
-    return new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
+    return formatDate(new Date())
   })
   const [archives, setArchives] = useState<SessionReviewArchive[]>([])
   const [selectedArchive, setSelectedArchive] = useState<SessionReviewArchive | null>(null)
@@ -78,11 +75,7 @@ export function SessionReview() {
 
       // Clear current notes and reset title
       setCurrentNotes('')
-      setCurrentTitle(new Date().toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      }))
+      setCurrentTitle(formatDate(new Date()))
 
       // Update the main session review to clear it
       console.log('[ARCHIVE] Clearing session review...')
@@ -182,7 +175,7 @@ export function SessionReview() {
                   <CardContent className="p-4">
                     <h4 className="font-semibold">{archive.title}</h4>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Archived: {new Date(archive.archived_at).toLocaleDateString()}
+                      Archived: {formatDate(archive.archived_at)}
                     </p>
                     <p className="text-sm mt-2 line-clamp-2">{archive.notes}</p>
                   </CardContent>

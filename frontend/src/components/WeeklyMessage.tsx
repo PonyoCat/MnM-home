@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Textarea } from './ui/textarea'
 import { Button } from './ui/button'
@@ -11,10 +11,22 @@ export function WeeklyMessage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<Error | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     loadMessage()
   }, [])
+
+  // Auto-resize textarea when message changes
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight for shrinking
+      textarea.style.height = 'auto'
+      // Set height to scrollHeight to fit content
+      textarea.style.height = `${textarea.scrollHeight}px`
+    }
+  }, [message])
 
   async function loadMessage() {
     try {
@@ -60,10 +72,12 @@ export function WeeklyMessage() {
       </CardHeader>
       <CardContent className="space-y-4 flex-1">
         <Textarea
+          ref={textareaRef}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="Add a message for the team this week..."
           disabled={isSaving}
+          className="min-h-[100px] resize-none overflow-hidden"
         />
         <div className="flex justify-end">
           <Button onClick={handleSave} disabled={isSaving}>

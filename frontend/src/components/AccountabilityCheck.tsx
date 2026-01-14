@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Button } from './ui/button'
 import { ErrorState, LoadingState } from './ui/error-state'
@@ -93,7 +94,7 @@ export function AccountabilityCheck() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <CardTitle>Accountability Check</CardTitle>
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="text-sm text-muted-foreground">Week start date {selectedWeek}</span>
+            <span className="text-sm text-muted-foreground">Week start date {formatDate(selectedWeek)}</span>
             <div className="flex gap-2">
               <Button
                 size="sm"

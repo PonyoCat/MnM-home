@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Button } from './ui/button'
 import { ErrorState, LoadingState } from './ui/error-state'
@@ -135,7 +136,7 @@ export function WeeklyChampions() {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
-        <CardTitle>Weekly Games (Week start date {weekStart})</CardTitle>
+        <CardTitle>Weekly Games (Week start date {formatDate(weekStart)})</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 flex-1">
         {PLAYERS.map(player => {
