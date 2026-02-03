@@ -42,6 +42,18 @@ export function Navigation() {
           >
             Champion Pool
           </NavLink>
+          <NavLink
+            to="/misc"
+            className={({ isActive }) =>
+              `text-lg font-medium transition-colors hover:text-primary ${
+                isActive
+                  ? 'text-primary border-b-2 border-primary pb-1'
+                  : 'text-muted-foreground'
+              }`
+            }
+          >
+            Bøde
+          </NavLink>
         </div>
         <ThemeToggle />
       </div>

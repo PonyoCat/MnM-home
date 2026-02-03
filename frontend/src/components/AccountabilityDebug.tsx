@@ -57,7 +57,7 @@ export function AccountabilityDebug() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Database Verification</CardTitle>
+        <CardTitle>Debug data</CardTitle>
         <Button
           variant="outline"
           size="sm"
@@ -89,6 +89,9 @@ export function AccountabilityDebug() {
               <div>
                 <div className="text-sm font-medium text-muted-foreground mb-2">
                   Current Week: {formatDate(debugData.week_start)}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  (Week start date {formatDate(debugData.week_start)})
                 </div>
               </div>
 

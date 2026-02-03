@@ -167,3 +167,45 @@ class PlayerAccountability(BaseModel):
     total_champions: int
     champions_played: int
     champion_details: list[ChampionDetail]  # NEW: For expandable UI
+
+
+# Fine Schemas (Bødekasse)
+class FineBase(BaseModel):
+    player_name: str
+    reason: str
+    amount: int
+
+
+class FineCreate(FineBase):
+    pass
+
+
+class Fine(FineBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+
+
+class PlayerFinesSummary(BaseModel):
+    """Summary of fines for a single player"""
+    player_name: str
+    total_amount: int
+    fines: list[Fine]
+
+
+# Clash Dates Schemas
+class ClashDatesBase(BaseModel):
+    date1: Optional[date] = None
+    date2: Optional[date] = None
+
+
+class ClashDatesUpdate(ClashDatesBase):
+    pass
+
+
+class ClashDates(ClashDatesBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    updated_at: datetime

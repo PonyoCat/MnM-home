@@ -89,3 +89,24 @@ class WeeklyMessage(Base):
     message = Column(Text, default="", nullable=False)
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Fine(Base):
+    """Fine/penalty for a team member (Bødekasse)"""
+    __tablename__ = "fines"
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_name = Column(String(255), nullable=False, index=True)  # Alex, Hans, Elias, Mikkel, Sinus
+    reason = Column(Text, nullable=False)  # Description of the infraction
+    amount = Column(Integer, nullable=False)  # Amount in DKK (kroner)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ClashDates(Base):
+    """Next clash dates - singleton table with up to 2 dates"""
+    __tablename__ = "clash_dates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date1 = Column(Date, nullable=True)  # First clash date
+    date2 = Column(Date, nullable=True)  # Second clash date
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

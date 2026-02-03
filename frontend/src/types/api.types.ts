@@ -66,3 +66,24 @@ export interface WeeklyMessage {
   last_updated: string
   created_at: string
 }
+
+export interface Fine {
+  id: number
+  player_name: string
+  reason: string
+  amount: number
+  created_at: string
+}
+
+export interface PlayerFinesSummary {
+  player_name: string
+  total_amount: number
+  fines: Fine[]
+}
+
+export interface ClashDates {
+  id: number
+  date1: string | null
+  date2: string | null
+  updated_at: string
+}

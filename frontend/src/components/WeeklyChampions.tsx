@@ -136,7 +136,7 @@ export function WeeklyChampions() {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader>
-        <CardTitle>Weekly Games (Week start date {formatDate(weekStart)})</CardTitle>
+        <CardTitle>Weekly Games</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6 flex-1">
         {PLAYERS.map(player => {

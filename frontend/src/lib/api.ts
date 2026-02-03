@@ -360,13 +360,13 @@ export const api = {
     }
   },
 
-  // Weekly Message
+  // Message Board (Weekly Message endpoint)
   async getWeeklyMessage() {
     try {
       const response = await apiFetch('/api/weekly-message')
       return response.json()
     } catch (error) {
-      console.error('Failed to fetch weekly message:', error)
+      console.error('Failed to fetch message board:', error)
       throw error
     }
   },
@@ -380,7 +380,7 @@ export const api = {
       })
       return response.json()
     } catch (error) {
-      console.error('Failed to update weekly message:', error)
+      console.error('Failed to update message board:', error)
       throw error
     }
   },
@@ -395,6 +395,68 @@ export const api = {
       return response.json()
     } catch (error) {
       console.error('Failed to fetch accountability check:', error)
+      throw error
+    }
+  },
+
+  // Fines (Bødekasse)
+  async getFines() {
+    try {
+      const response = await apiFetch('/api/fines')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch fines:', error)
+      throw error
+    }
+  },
+
+  async createFine(data: { player_name: string; reason: string; amount: number }) {
+    try {
+      const response = await apiFetch('/api/fines', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to create fine:', error)
+      throw error
+    }
+  },
+
+  async deleteFine(id: number) {
+    try {
+      const response = await apiFetch(`/api/fines/${id}`, {
+        method: 'DELETE'
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to delete fine:', error)
+      throw error
+    }
+  },
+
+  // Clash Dates
+  async getClashDates() {
+    try {
+      const response = await apiFetch('/api/clash-dates')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch clash dates:', error)
+      throw error
+    }
+  },
+
+  async updateClashDates(date1: string | null, date2: string | null) {
+    try {
+      const response = await apiFetch('/api/clash-dates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date1, date2 })
+      })
+      return response.json()
+    } catch (error) {
+      console.error('Failed to update clash dates:', error)
       throw error
     }
   }

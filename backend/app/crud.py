@@ -684,3 +684,257 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
             for w in weekly_champions
         ]
     }
+
+
+# Analytics CRUD
+async def get_weekly_trends(
+    db: AsyncSession,
+    start_date: date,
+    end_date: date,
+    player_name: Optional[str] = None
+) -> List[models.WeeklyChampionArchive]:
+    """Get aggregated weekly data from archives for trends"""
+    query = select(models.WeeklyChampionArchive).where(
+        models.WeeklyChampionArchive.week_start_date >= start_date,
+        models.WeeklyChampionArchive.week_start_date <= end_date
+    )
+
+    if player_name:
+        query = query.where(models.WeeklyChampionArchive.player_name == player_name)
+
+    query = query.order_by(models.WeeklyChampionArchive.week_start_date)
+
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def get_practice_vs_winrate_data(db: AsyncSession) -> List[dict]:
+    """
+    Combine archive data (practice volume) and pick stats (win rate).
+    Returns list of champions with both metrics.
+    """
+    # 1. Get total practice games per champion from archives
+    # We aggregate across all time and all players for "Champion Mastery"
+    # Or should it be per player? The detailed analysis might want per player.
+    # Let's aggregate by champion for a general view first as per PRP "Champion Mastery"
+    
+    archives_result = await db.execute(select(models.WeeklyChampionArchive))
+    archives = archives_result.scalars().all()
+    
+    practice_map = {} # champion_name -> total_played
+    for arch in archives:
+        practice_map[arch.champion_name] = practice_map.get(arch.champion_name, 0) + arch.times_played
+        
+    # 2. Get pick stats
+    stats_result = await db.execute(select(models.PickStat))
+    stats = list(stats_result.scalars().all())
+    
+    # 3. Combine
+    combined_data = []
+    
+    # Create a set of all champions found in either source
+    all_champions = set(practice_map.keys()) | set(s.champion_name for s in stats)
+    
+    stat_map = {s.champion_name: s for s in stats}
+    
+    for champ_name in all_champions:
+        practice_count = practice_map.get(champ_name, 0)
+        stat = stat_map.get(champ_name)
+        
+        if stat:
+            win_rate = (
+                round((stat.first_pick_wins / stat.first_pick_games) * 100, 1)
+                if stat.first_pick_games > 0
+                else 0.0
+            )
+            games_played = stat.first_pick_games
+            wins = stat.first_pick_wins
+        else:
+            win_rate = 0.0
+            games_played = 0
+            wins = 0
+            
+        combined_data.append({
+            "champion_name": champ_name,
+            "total_practice_games": practice_count,
+            "pick_stat_games": games_played,
+            "pick_stat_wins": wins,
+            "win_rate": win_rate
+        })
+        
+    return combined_data
+
+
+# Fine CRUD (Bødekasse)
+async def get_fines(db: AsyncSession) -> List[models.Fine]:
+    """Get all fines ordered by creation date (newest first)"""
+    result = await db.execute(
+        select(models.Fine).order_by(models.Fine.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_fines_summary(db: AsyncSession) -> List[dict]:
+    """Get all fines grouped by player with totals"""
+    # Get all fines
+    result = await db.execute(
+        select(models.Fine).order_by(models.Fine.created_at.desc())
+    )
+    fines = list(result.scalars().all())
+
+    # Group by player
+    from collections import defaultdict
+    player_fines = defaultdict(list)
+    for fine in fines:
+        player_fines[fine.player_name].append(fine)
+
+    # Build summary for each player that has fines
+    summaries = []
+    for player_name, player_fine_list in player_fines.items():
+        total_amount = sum(f.amount for f in player_fine_list)
+        summaries.append({
+            "player_name": player_name,
+            "total_amount": total_amount,
+            "fines": player_fine_list
+        })
+
+    # Sort by player name for consistent ordering
+    summaries.sort(key=lambda x: x["player_name"])
+
+    return summaries
+
+
+async def create_fine(
+    db: AsyncSession,
+    fine_data: schemas.FineCreate
+) -> models.Fine:
+    """Create a new fine"""
+    fine = models.Fine(**fine_data.model_dump())
+    db.add(fine)
+    await db.commit()
+    await db.refresh(fine)
+    return fine
+
+
+async def delete_fine(db: AsyncSession, fine_id: int) -> bool:
+    """Delete a fine by ID"""
+    result = await db.execute(
+        select(models.Fine).where(models.Fine.id == fine_id)
+    )
+    fine = result.scalars().first()
+
+    if fine:
+        await db.delete(fine)
+        await db.commit()
+        return True
+
+    return False
+
+
+async def get_pool_coverage(
+    db: AsyncSession,
+    week_start: date
+) -> List[dict]:
+    """
+    Calculate what percentage of their champion pool each player has played this week.
+    """
+    # 1. Get all pools
+    pools_result = await db.execute(select(models.ChampionPool))
+    pools = list(pools_result.scalars().all())
+    
+    # 2. Get plays for the specific week
+    # Check both current active table and archives to be safe?
+    # Usually "week_start" implies looking at a specific week.
+    # If it's a past week, it's in archives. If current, it's in weekly_champions.
+    
+    current_week_start = _get_week_start()
+    
+    player_stats = {} # player -> {pool_size, played_count, played_champs_set}
+    
+    # Initialize players
+    for p in pools:
+        if p.player_name not in player_stats:
+            player_stats[p.player_name] = {
+                "pool_size": 0,
+                "played_count": 0,
+                "played_unique": 0,
+                "pool_champs": set(),
+                "played_champs": set()
+            }
+        player_stats[p.player_name]["pool_size"] += 1
+        player_stats[p.player_name]["pool_champs"].add(p.champion_name)
+
+    if week_start >= current_week_start:
+        # Check active weekly_champions
+        # Note: We need to count how many *unique* champions from their pool they played
+        qry = select(models.WeeklyChampion).where(
+            models.WeeklyChampion.week_start_date == week_start,
+            models.WeeklyChampion.played == True,
+            models.WeeklyChampion.archived_at.is_(None)
+        )
+        res = await db.execute(qry)
+        played_rows = res.scalars().all()
+        
+        for row in played_rows:
+            if row.player_name in player_stats:
+                player_stats[row.player_name]["played_champs"].add(row.champion_name)
+                
+    else:
+        # Check archives
+        qry = select(models.WeeklyChampionArchive).where(
+            models.WeeklyChampionArchive.week_start_date == week_start
+        )
+        res = await db.execute(qry)
+        archived_rows = res.scalars().all()
+        
+        for row in archived_rows:
+            if row.player_name in player_stats and row.times_played > 0:
+                player_stats[row.player_name]["played_champs"].add(row.champion_name)
+
+    # Calculate coverage
+    results = []
+    for player, data in player_stats.items():
+        # Intersection of pool champs and played champs
+        played_from_pool = data["pool_champs"].intersection(data["played_champs"])
+        
+        coverage_pct = 0.0
+        if data["pool_size"] > 0:
+            coverage_pct = round((len(played_from_pool) / data["pool_size"]) * 100, 1)
+            
+        results.append({
+            "player_name": player,
+            "pool_size": data["pool_size"],
+            "unique_champions_played": len(data["played_champs"]),
+            "pool_champions_played": len(played_from_pool),
+            "coverage_percent": coverage_pct
+        })
+
+    return results
+
+
+# Clash Dates CRUD
+async def get_clash_dates(db: AsyncSession) -> models.ClashDates:
+    """Get the clash dates (singleton record)"""
+    result = await db.execute(select(models.ClashDates).where(models.ClashDates.id == 1))
+    clash_dates = result.scalar_one_or_none()
+    if not clash_dates:
+        # Create initial row if doesn't exist
+        clash_dates = models.ClashDates(id=1, date1=None, date2=None)
+        db.add(clash_dates)
+        await db.commit()
+        await db.refresh(clash_dates)
+    return clash_dates
+
+
+async def update_clash_dates(
+    db: AsyncSession,
+    date1: Optional[date],
+    date2: Optional[date]
+) -> models.ClashDates:
+    """Update clash dates"""
+    clash_dates = await get_clash_dates(db)
+    clash_dates.date1 = date1
+    clash_dates.date2 = date2
+    await db.commit()
+    await db.refresh(clash_dates)
+    return clash_dates
