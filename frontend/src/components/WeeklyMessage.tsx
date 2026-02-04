@@ -10,7 +10,6 @@ import { api } from '@/lib/api'
 export function WeeklyMessage() {
   const [message, setMessage] = useState('')
   const [isEditing, setIsEditing] = useState(false)
-  const [isSaved, setIsSaved] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<Error | null>(null)
@@ -50,9 +49,7 @@ export function WeeklyMessage() {
       setIsSaving(true)
       setError(null)
       await api.updateWeeklyMessage(message)
-      setIsSaved(true)
       setIsEditing(false)
-      setTimeout(() => setIsSaved(false), 2000)
     } catch (error) {
       console.error('Error saving message board:', error)
       setError(error as Error)
