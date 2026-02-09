@@ -6,8 +6,48 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
 import { ErrorState, LoadingState } from './ui/error-state'
+import { Calendar } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SessionReview as SessionReviewType, SessionReviewArchive } from '@/types/api.types'
+
+/**
+ * Creates a Google Calendar URL for the recurring Tuesday scrim event
+ * Opens every Tuesday at 8 PM with a 30-minute reminder
+ */
+function createScrimCalendarUrl(): string {
+  // Find the next Tuesday
+  const now = new Date()
+  const dayOfWeek = now.getDay()
+  const daysUntilTuesday = (2 - dayOfWeek + 7) % 7 || 7 // 2 = Tuesday
+
+  const nextTuesday = new Date(now)
+  nextTuesday.setDate(now.getDate() + daysUntilTuesday)
+  nextTuesday.setHours(20, 0, 0, 0) // 8 PM
+
+  // Format as YYYYMMDDTHHMMSS for timed event (local time)
+  const formatDateTime = (d: Date) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const hours = String(d.getHours()).padStart(2, '0')
+    const minutes = String(d.getMinutes()).padStart(2, '0')
+    return `${year}${month}${day}T${hours}${minutes}00`
+  }
+
+  // End time is 2 hours later (10 PM)
+  const endTime = new Date(nextTuesday)
+  endTime.setHours(22, 0, 0, 0)
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: 'MnM scrim',
+    dates: `${formatDateTime(nextTuesday)}/${formatDateTime(endTime)}`,
+    details: 'Ugentlig MnM scrim session - Husk at saette en pamindelse 30 minutter for!',
+    recur: 'RRULE:FREQ=WEEKLY;BYDAY=TU',
+  })
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
 
 export function SessionReview() {
   const [currentNotes, setCurrentNotes] = useState('')
@@ -146,10 +186,17 @@ export function SessionReview() {
             rows={6}
             placeholder="Add notes from this gaming session..."
           />
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button onClick={archiveNotes}>Archive Session</Button>
             <Button variant="outline" onClick={() => setArchiveDialogOpen(true)}>
               View Archives
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => window.open(createScrimCalendarUrl(), '_blank')}
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              Tilføj scrim til kalender
             </Button>
           </div>
         </CardContent>

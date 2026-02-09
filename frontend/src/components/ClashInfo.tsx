@@ -2,9 +2,36 @@ import { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Pencil, Check, X } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog'
+import { Pencil, Check, X, Calendar } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ClashDates } from '@/types/api.types'
+
+/**
+ * Creates a Google Calendar URL for adding an event with reminders
+ * Note: Google Calendar URL doesn't support custom reminders, but users can edit after adding
+ */
+function createGoogleCalendarUrl(title: string, dateStr: string): string {
+  // Parse the date and create all-day event
+  const date = new Date(dateStr)
+
+  // Format as YYYYMMDD for all-day event
+  const startDate = date.toISOString().split('T')[0].replace(/-/g, '')
+
+  // End date is the next day for all-day events
+  const endDate = new Date(date)
+  endDate.setDate(endDate.getDate() + 1)
+  const endDateStr = endDate.toISOString().split('T')[0].replace(/-/g, '')
+
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${startDate}/${endDateStr}`,
+    details: 'MnM Clash event - Husk at sætte påmindelser: 1 time før, 1 dag før, og 2 dage før!',
+  })
+
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
 
 interface ClashRotation {
   months: number[]
@@ -50,6 +77,14 @@ export function ClashInfo() {
   const [editDate1, setEditDate1] = useState('')
   const [editDate2, setEditDate2] = useState('')
   const [loading, setLoading] = useState(true)
+  const [calendarDialogOpen, setCalendarDialogOpen] = useState(false)
+
+  // Function to open Google Calendar with selected date
+  function addToCalendar(dateStr: string) {
+    const url = createGoogleCalendarUrl('VIGTIG: MnM clash', dateStr)
+    window.open(url, '_blank')
+    setCalendarDialogOpen(false)
+  }
 
   // JavaScript months are 0-indexed, add 1 for our 1-indexed array
   const currentMonth = new Date().getMonth() + 1
@@ -160,6 +195,18 @@ export function ClashInfo() {
               {loading ? '...' : clashDatesText}
             </div>
           )}
+          {/* Add to Calendar button */}
+          {(hasValidDate1 || hasValidDate2) && !isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => setCalendarDialogOpen(true)}
+            >
+              <Calendar className="h-4 w-4 mr-2" />
+              Tilføj til kalender
+            </Button>
+          )}
         </div>
 
         {/* Clash Ansvarlig section */}
@@ -169,6 +216,45 @@ export function ClashInfo() {
           <div className="text-sm text-muted-foreground">{current.period}</div>
         </div>
       </CardContent>
+
+      {/* Calendar Date Selection Dialog */}
+      <Dialog open={calendarDialogOpen} onOpenChange={setCalendarDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Vælg dato til kalender</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-4">
+            <p className="text-sm text-muted-foreground">
+              Vælg hvilken clash dato du vil tilføje til din Google Kalender:
+            </p>
+            {hasValidDate1 && clashDates?.date1 && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => addToCalendar(clashDates.date1!)}
+              >
+                <Calendar className="h-4 w-4 mr-2" />
+                {date1Display}
+              </Button>
+            )}
+            {hasValidDate2 && clashDates?.date2 && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => addToCalendar(clashDates.date2!)}
+              >
+                <Calendar className="h-4 w-4 mr-2" />
+                {date2Display}
+              </Button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCalendarDialogOpen(false)}>
+              Annuller
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

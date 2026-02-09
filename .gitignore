@@ -33,3 +33,4 @@ scripts/neon-mcp-stdio.js
 
 # Render doesn't use _redirects files (Netlify-specific)
 frontend/public/_redirects
+docs/
