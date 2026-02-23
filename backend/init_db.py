@@ -1,6 +1,6 @@
 import asyncio
 from app.database import engine, Base
-from app.models import SessionReview, DraftNote, WeeklyChampion, PickStat, SessionReviewArchive, WeeklyChampionArchive, WeeklyMessage
+from app.models import SessionReview, DraftNote, WeeklyChampion, PickStat, SessionReviewArchive, WeeklyMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import AsyncSessionLocal
@@ -18,7 +18,6 @@ async def init_db():
     print("  - draft_notes")
     print("  - pick_stats")
     print("  - session_review_archives")
-    print("  - weekly_champion_archives")
     print("  - weekly_messages")
 
     # Insert initial rows for session_reviews and draft_notes

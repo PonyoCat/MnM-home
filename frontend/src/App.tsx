@@ -7,6 +7,7 @@ import { HomePage } from '@/pages/HomePage'
 import { ScrimPage } from '@/pages/ScrimPage'
 import { ChampionPoolPage } from '@/pages/ChampionPoolPage'
 import { MiscPage } from '@/pages/MiscPage'
+import { DataPage } from '@/pages/DataPage'
 
 function App() {
   const [reloadKey, setReloadKey] = useState(0)
@@ -19,7 +20,7 @@ function App() {
     <BrowserRouter>
       <div className="min-h-screen px-4 py-8 md:px-8">
         <div className="max-w-6xl mx-auto space-y-8">
-          <header className="mb-4 border-b border-border/60 pb-6">
+          <header className="border-b border-border/60 pb-6">
             <div className="flex justify-between items-start gap-4">
               <div className="space-y-2">
                 <h1 className="text-4xl md:text-5xl font-semibold text-foreground">
@@ -49,6 +50,7 @@ function App() {
               <Route path="/scrim" element={<ScrimPage />} />
               <Route path="/champion-pool" element={<ChampionPoolPage />} />
               <Route path="/misc" element={<MiscPage />} />
+              <Route path="/data" element={<DataPage />} />
             </Routes>
           </div>
         </div>

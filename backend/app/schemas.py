@@ -37,7 +37,6 @@ class WeeklyChampion(WeeklyChampionBase):
 
     id: int
     created_at: datetime
-    archived_at: Optional[datetime] = None
 
 # Draft Note Schemas
 class DraftNoteBase(BaseModel):
@@ -94,23 +93,6 @@ class SessionReviewArchiveUpdate(BaseModel):
     notes: Optional[str] = None
 
 class SessionReviewArchive(SessionReviewArchiveBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    archived_at: datetime
-
-# Weekly Champion Archive Schemas
-class WeeklyChampionArchiveBase(BaseModel):
-    player_name: str
-    champion_name: str
-    times_played: int
-    week_start_date: date
-    week_end_date: date
-
-class WeeklyChampionArchiveCreate(WeeklyChampionArchiveBase):
-    pass
-
-class WeeklyChampionArchive(WeeklyChampionArchiveBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

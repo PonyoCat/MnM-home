@@ -76,7 +76,17 @@
       "Bash(python -m uvicorn:*)",
       "Bash(New-Item -ItemType Directory -Force -Path \"c:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\documentation\")",
       "Bash(dir /S /B \"c:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\")",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "mcp__Neon__list_projects",
+      "mcp__Neon__describe_table_schema",
+      "mcp__chrome-devtools__list_pages",
+      "mcp__chrome-devtools__navigate_page",
+      "mcp__chrome-devtools__take_screenshot",
+      "Bash(taskkill /F /IM chrome.exe /T:*)",
+      "Bash(taskkill:*)",
+      "mcp__chrome-devtools__evaluate_script",
+      "mcp__context7__query-docs",
+      "mcp__context7__resolve-library-id"
     ],
     "deny": []
   }

@@ -3,9 +3,9 @@ import { ThemeToggle } from './ThemeToggle'
 
 export function Navigation() {
   return (
-    <nav className="border-b border-border/60 mb-8">
+    <nav className="border-b border-border/60">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-        <div className="flex gap-6">
+        <div className="flex gap-7">
           <NavLink
             to="/"
             className={({ isActive }) =>
@@ -53,6 +53,18 @@ export function Navigation() {
             }
           >
             Bøde
+          </NavLink>
+          <NavLink
+            to="/data"
+            className={({ isActive }) =>
+              `text-lg font-medium transition-colors hover:text-primary ${
+                isActive
+                  ? 'text-primary border-b-2 border-primary pb-1'
+                  : 'text-muted-foreground'
+              }`
+            }
+          >
+            Data
           </NavLink>
         </div>
         <ThemeToggle />

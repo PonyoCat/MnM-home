@@ -12,7 +12,6 @@ export interface WeeklyChampion {
   played: boolean
   week_start_date: string
   created_at: string
-  archived_at: string | null
 }
 
 export interface DraftNote {
@@ -37,16 +36,6 @@ export interface SessionReviewArchive {
   title: string
   notes: string
   original_date?: string
-  archived_at: string
-}
-
-export interface WeeklyChampionArchive {
-  id: number
-  player_name: string
-  champion_name: string
-  times_played: number
-  week_start_date: string
-  week_end_date: string
   archived_at: string
 }
 

@@ -10,12 +10,12 @@ const PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 function getWeekStart(): string {
   const now = new Date()
   const dayOfWeek = now.getDay()
-  const wednesday = new Date(now)
-  // Calculate days back to Wednesday (day 3)
-  // Wednesday=0 days, Thursday=1 day, ..., Sunday=4 days, Monday=5 days, Tuesday=6 days
-  const daysBack = (dayOfWeek - 3 + 7) % 7
-  wednesday.setDate(now.getDate() - daysBack)
-  return wednesday.toISOString().split('T')[0]
+  const thursday = new Date(now)
+  // Calculate days back to Thursday (day 4)
+  // Thursday=0 days, Friday=1 day, ..., Monday=4 days, Tuesday=5 days, Wednesday=6 days
+  const daysBack = (dayOfWeek - 4 + 7) % 7
+  thursday.setDate(now.getDate() - daysBack)
+  return thursday.toISOString().split('T')[0]
 }
 
 export function WeeklyChampions() {
@@ -87,13 +87,8 @@ export function WeeklyChampions() {
 
     try {
       if (currentCount === 1) {
-        // If going from 1 to 0, toggle the last instance to played=false instead of deleting
-        await api.toggleWeeklyChampion({
-          player_name: player,
-          champion_name: championName,
-          played: false,
-          week_start_date: weekStart
-        })
+        // If going from 1 to 0, delete the played instance (leaves the pool placeholder intact)
+        await api.deleteOneWeeklyChampionInstance(player, championName, weekStart, true)
       } else {
         // If count is > 1, delete one played instance
         await api.deleteOneWeeklyChampionInstance(player, championName, weekStart, true)

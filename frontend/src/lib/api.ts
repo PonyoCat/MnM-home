@@ -1,12 +1,98 @@
 import { withRetry, fetchWithTimeout } from './retry'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const CHARTS_BASE = '/api/analytics/charts'
+
+type ChartMode = 'all' | 'player'
+
+interface ChartDateRangeParams {
+  startDate: string
+  endDate: string
+  topN?: number
+}
+
+export interface BarChartParams extends ChartDateRangeParams {
+  mode: ChartMode
+  playerName?: string
+}
+
+export interface PieChartParams extends ChartDateRangeParams {
+  playerName: string
+}
+
+export interface LineChartParams extends ChartDateRangeParams {
+  mode: ChartMode
+  playerName?: string
+}
+
+export interface ChartDateBounds {
+  earliest_date: string | null
+  latest_date: string | null
+}
+
+export interface ChartJsonDataParams {
+  mode: ChartMode
+  playerName: string
+  startDate: string
+  endDate: string
+}
+
+export interface ChartJsonData {
+  bar_data: Record<string, string | number>[]
+  line_data: Record<string, string | number>[]
+  line_champions: string[]
+  pie_data: { name: string; value: number }[]
+  pie_player: string
+  total_games: number
+}
+
+function buildChartUrl(path: string, params: Record<string, string | number | undefined>) {
+  const search = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return
+    search.set(key, String(value))
+  })
+
+  return `${API_URL}${path}?${search.toString()}`
+}
+
+export function getBarChartUrl(params: BarChartParams) {
+  return buildChartUrl(`${CHARTS_BASE}/bar`, {
+    mode: params.mode,
+    player_name: params.playerName,
+    start_date: params.startDate,
+    end_date: params.endDate,
+    top_n: params.topN
+  })
+}
+
+export function getPieChartUrl(params: PieChartParams) {
+  return buildChartUrl(`${CHARTS_BASE}/pie`, {
+    player_name: params.playerName,
+    start_date: params.startDate,
+    end_date: params.endDate,
+    top_n: params.topN
+  })
+}
+
+export function getLineChartUrl(params: LineChartParams) {
+  return buildChartUrl(`${CHARTS_BASE}/line`, {
+    mode: params.mode,
+    player_name: params.playerName,
+    start_date: params.startDate,
+    end_date: params.endDate,
+    top_n: params.topN
+  })
+}
 
 // Helper function to make API calls with retry logic and timeout
 async function apiFetch(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<Response> {
+  type HttpError = Error & { status?: number }
+
   return withRetry(async () => {
     const response = await fetchWithTimeout(
       `${API_URL}${endpoint}`,
@@ -16,8 +102,8 @@ async function apiFetch(
 
     if (!response.ok) {
       // Throw error with status for better error handling
-      const error = new Error(`HTTP ${response.status}: ${response.statusText}`)
-      ;(error as any).status = response.status
+      const error: HttpError = new Error(`HTTP ${response.status}: ${response.statusText}`)
+      error.status = response.status
       throw error
     }
 
@@ -26,6 +112,36 @@ async function apiFetch(
 }
 
 export const api = {
+  getBarChartUrl,
+  getPieChartUrl,
+  getLineChartUrl,
+
+  async getChartJsonData(params: ChartJsonDataParams): Promise<ChartJsonData> {
+    try {
+      const search = new URLSearchParams({
+        mode: params.mode,
+        player_name: params.playerName,
+        start_date: params.startDate,
+        end_date: params.endDate,
+      })
+      const response = await apiFetch(`/api/analytics/charts/json-data?${search.toString()}`)
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch chart json data:', error)
+      throw error
+    }
+  },
+
+  async getChartDateBounds(): Promise<ChartDateBounds> {
+    try {
+      const response = await apiFetch('/api/analytics/charts/date-bounds')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch chart date bounds:', error)
+      throw error
+    }
+  },
+
   // Session Review
   async getSessionReview() {
     try {
@@ -265,31 +381,6 @@ export const api = {
       )
     } catch (error) {
       console.error('Failed to delete game instance:', error)
-      throw error
-    }
-  },
-
-  async archiveWeeklyChampions(weekStart: string) {
-    try {
-      const response = await apiFetch(`/api/weekly-champions/archive?week_start=${weekStart}`, {
-        method: 'POST'
-      })
-      return response.json()
-    } catch (error) {
-      console.error('Failed to archive weekly games:', error)
-      throw error
-    }
-  },
-
-  async getWeeklyChampionArchives(playerName?: string) {
-    try {
-      const endpoint = playerName
-        ? `/api/weekly-champions/archives?player_name=${encodeURIComponent(playerName)}`
-        : `/api/weekly-champions/archives`
-      const response = await apiFetch(endpoint)
-      return response.json()
-    } catch (error) {
-      console.error('Failed to fetch game archives:', error)
       throw error
     }
   },
