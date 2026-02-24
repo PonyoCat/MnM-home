@@ -7,7 +7,14 @@ import type { WeeklyChampion, ChampionPool } from '@/types/api.types'
 
 const PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 
-function getWeekStart(): string {
+function toLocalIsoDate(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getFallbackWeekStart(): string {
   const now = new Date()
   const dayOfWeek = now.getDay()
   const thursday = new Date(now)
@@ -15,7 +22,7 @@ function getWeekStart(): string {
   // Thursday=0 days, Friday=1 day, ..., Monday=4 days, Tuesday=5 days, Wednesday=6 days
   const daysBack = (dayOfWeek - 4 + 7) % 7
   thursday.setDate(now.getDate() - daysBack)
-  return thursday.toISOString().split('T')[0]
+  return toLocalIsoDate(thursday)
 }
 
 export function WeeklyChampions() {
@@ -27,24 +34,39 @@ export function WeeklyChampions() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
+  const [weekStart, setWeekStart] = useState<string | null>(null)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
     Alex: false, Hans: false, Elias: false, Mikkel: false, Sinus: false
   })
-  const weekStart = getWeekStart()
 
   useEffect(() => {
-    loadData()
+    initializeData()
   }, [])
 
-  async function loadData() {
+  async function initializeData() {
+    const fallbackWeekStart = getFallbackWeekStart()
+    let resolvedWeekStart = fallbackWeekStart
+
+    try {
+      const currentWeekConfig = await api.getCurrentWeekConfig()
+      resolvedWeekStart = currentWeekConfig.week_start_date || fallbackWeekStart
+    } catch (error) {
+      console.error('Error loading week config, using fallback:', error)
+    }
+
+    setWeekStart(resolvedWeekStart)
+    await loadData(resolvedWeekStart)
+  }
+
+  async function loadData(targetWeekStart: string) {
     try {
       setLoading(true)
       setError(null)
 
       // Fetch both champion pools and weekly champions
       const [poolsData, championsData] = await Promise.all([
-        api.getChampionPools(),
-        api.getWeeklyChampions(weekStart)
+        api.getChampionPools(undefined, targetWeekStart),
+        api.getWeeklyChampions(targetWeekStart)
       ])
 
       // Group champion pools by player
@@ -69,6 +91,8 @@ export function WeeklyChampions() {
   }
 
   async function incrementChampion(player: string, championName: string) {
+    if (!weekStart) return
+
     try {
       await api.toggleWeeklyChampion({
         player_name: player,
@@ -76,14 +100,14 @@ export function WeeklyChampions() {
         played: true,
         week_start_date: weekStart
       })
-      await loadData()
+      await loadData(weekStart)
     } catch (error) {
       console.error('Error incrementing game count:', error)
     }
   }
 
   async function decrementChampion(player: string, championName: string, currentCount: number) {
-    if (currentCount === 0) return
+    if (currentCount === 0 || !weekStart) return
 
     try {
       if (currentCount === 1) {
@@ -93,7 +117,7 @@ export function WeeklyChampions() {
         // If count is > 1, delete one played instance
         await api.deleteOneWeeklyChampionInstance(player, championName, weekStart, true)
       }
-      await loadData()
+      await loadData(weekStart)
     } catch (error) {
       console.error('Error decrementing game count:', error)
     }
@@ -124,7 +148,7 @@ export function WeeklyChampions() {
   }
 
   if (error) {
-    return <ErrorState error={error} onRetry={loadData} componentName="weekly games" />
+    return <ErrorState error={error} onRetry={initializeData} componentName="weekly games" />
   }
 
   return (

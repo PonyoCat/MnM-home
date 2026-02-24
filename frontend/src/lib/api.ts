@@ -1,4 +1,5 @@
 import { withRetry, fetchWithTimeout } from './retry'
+import type { CurrentWeekConfig, WeekBoundaryVersion } from '@/types/api.types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const CHARTS_BASE = '/api/analytics/charts'
@@ -138,6 +139,27 @@ export const api = {
       return response.json()
     } catch (error) {
       console.error('Failed to fetch chart date bounds:', error)
+      throw error
+    }
+  },
+
+  // Week Config
+  async getCurrentWeekConfig(): Promise<CurrentWeekConfig> {
+    try {
+      const response = await apiFetch('/api/week-config/current')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch current week config:', error)
+      throw error
+    }
+  },
+
+  async getWeekBoundaryVersions(): Promise<WeekBoundaryVersion[]> {
+    try {
+      const response = await apiFetch('/api/week-config/versions')
+      return response.json()
+    } catch (error) {
+      console.error('Failed to fetch week boundary versions:', error)
       throw error
     }
   },
@@ -386,11 +408,14 @@ export const api = {
   },
 
   // Champion Pool
-  async getChampionPools(playerName?: string) {
+  async getChampionPools(playerName?: string, weekStart?: string) {
     try {
-      const endpoint = playerName
-        ? `/api/champion-pool?player_name=${encodeURIComponent(playerName)}`
-        : `/api/champion-pool`
+      const search = new URLSearchParams()
+      if (playerName) search.set('player_name', playerName)
+      if (weekStart) search.set('week_start', weekStart)
+      const endpoint = search.size > 0
+        ? `/api/champion-pool?${search.toString()}`
+        : '/api/champion-pool'
       const response = await apiFetch(endpoint)
       return response.json()
     } catch (error) {
@@ -424,6 +449,7 @@ export const api = {
       champion_name?: string
       description?: string
       pick_priority?: string
+      disabled?: boolean
     }
   ) {
     try {

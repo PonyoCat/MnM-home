@@ -136,6 +136,15 @@ export function ChampionPoolList() {
     }
   }
 
+  async function toggleDisabled(pool: ChampionPool) {
+    try {
+      await api.updateChampionPool(pool.id, { disabled: !pool.disabled })
+      await loadPools()
+    } catch (error) {
+      console.error('Error toggling champion disabled state:', error)
+    }
+  }
+
   function togglePlayerExpanded(player: string) {
     setExpandedPlayers(prev => ({ ...prev, [player]: !prev[player] }))
   }
@@ -215,14 +224,26 @@ export function ChampionPoolList() {
                       </TableHeader>
                       <TableBody>
                         {playerPools[player].map(pool => (
-                          <TableRow key={pool.id}>
-                            <TableCell className="font-medium">{pool.champion_name}</TableCell>
+                          <TableRow key={pool.id} className={pool.disabled ? 'opacity-50' : ''}>
+                            <TableCell className="font-medium">
+                              {pool.champion_name}
+                              {pool.disabled && (
+                                <span className="ml-2 text-xs text-muted-foreground">(disabled)</span>
+                              )}
+                            </TableCell>
                             <TableCell>{pool.description}</TableCell>
                             <TableCell>{pool.pick_priority}</TableCell>
                             <TableCell>
                               <div className="flex gap-2">
                                 <Button size="sm" onClick={() => openEditDialog(pool)}>
                                   Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => toggleDisabled(pool)}
+                                >
+                                  {pool.disabled ? 'Enable' : 'Disable'}
                                 </Button>
                                 <Button
                                   size="sm"

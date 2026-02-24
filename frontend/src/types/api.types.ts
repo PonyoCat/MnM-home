@@ -45,6 +45,9 @@ export interface ChampionPool {
   champion_name: string
   description: string
   pick_priority: string
+  disabled: boolean
+  effective_from_week: string
+  effective_to_week: string | null
   created_at: string
   updated_at: string
 }
@@ -75,4 +78,19 @@ export interface ClashDates {
   date1: string | null
   date2: string | null
   updated_at: string
+}
+
+export interface CurrentWeekConfig {
+  target_date: string
+  week_start_date: string
+  week_start_weekday: number
+  week_start_day_name: string
+}
+
+export interface WeekBoundaryVersion {
+  id: number
+  week_start_weekday: number
+  effective_from_date: string
+  effective_to_date: string | null
+  created_at: string
 }

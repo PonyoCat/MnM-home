@@ -31,7 +31,7 @@ export function Navigation() {
             Scrim
           </NavLink>
           <NavLink
-            to="/champion-pool"
+            to="/data"
             className={({ isActive }) =>
               `text-lg font-medium transition-colors hover:text-primary ${
                 isActive
@@ -40,7 +40,7 @@ export function Navigation() {
               }`
             }
           >
-            Champion Pool
+            Data
           </NavLink>
           <NavLink
             to="/misc"
@@ -55,7 +55,7 @@ export function Navigation() {
             Bøde
           </NavLink>
           <NavLink
-            to="/data"
+            to="/champion-pool"
             className={({ isActive }) =>
               `text-lg font-medium transition-colors hover:text-primary ${
                 isActive
@@ -64,7 +64,7 @@ export function Navigation() {
               }`
             }
           >
-            Data
+            Champion Pool
           </NavLink>
         </div>
         <ThemeToggle />

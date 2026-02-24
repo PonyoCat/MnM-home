@@ -104,6 +104,7 @@ class ChampionPoolBase(BaseModel):
     champion_name: str
     description: str = Field(default="")
     pick_priority: str = Field(default="")
+    disabled: bool = Field(default=False)
 
 class ChampionPoolCreate(ChampionPoolBase):
     pass
@@ -112,11 +113,14 @@ class ChampionPoolUpdate(BaseModel):
     champion_name: Optional[str] = None
     description: Optional[str] = None
     pick_priority: Optional[str] = None
+    disabled: Optional[bool] = None
 
 class ChampionPool(ChampionPoolBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    effective_from_week: date
+    effective_to_week: Optional[date] = None
     created_at: datetime
     updated_at: datetime
 
@@ -191,3 +195,21 @@ class ClashDates(ClashDatesBase):
 
     id: int
     updated_at: datetime
+
+
+# Week Boundary Config Schemas
+class WeekBoundaryVersion(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    week_start_weekday: int
+    effective_from_date: date
+    effective_to_date: Optional[date] = None
+    created_at: datetime
+
+
+class CurrentWeekConfig(BaseModel):
+    target_date: date
+    week_start_date: date
+    week_start_weekday: int
+    week_start_day_name: str

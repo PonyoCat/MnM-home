@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import session_review, weekly_champions, draft_notes, pick_stats, champion_pool, weekly_message, accountability, analytics, fines, clash_dates
+from .routers import session_review, weekly_champions, draft_notes, pick_stats, champion_pool, weekly_message, accountability, analytics, fines, clash_dates, week_config
 
 from contextlib import asynccontextmanager
 from .database import engine, Base
@@ -53,6 +53,7 @@ app.include_router(accountability.router)
 app.include_router(analytics.router)
 app.include_router(fines.router)
 app.include_router(clash_dates.router)
+app.include_router(week_config.router)
 
 @app.api_route("/", methods=["GET", "HEAD"])
 async def root():

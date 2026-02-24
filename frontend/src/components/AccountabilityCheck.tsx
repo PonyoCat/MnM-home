@@ -21,26 +21,40 @@ interface PlayerAccountability {
   champion_details: ChampionDetail[]
 }
 
-function getCurrentWeekStart(): string {
-  const now = new Date()
-  const dayOfWeek = now.getDay()
-  const wednesday = new Date(now)
-  // Calculate days back to Wednesday (day 3)
-  // Wednesday=0 days, Thursday=1 day, ..., Sunday=4 days, Monday=5 days, Tuesday=6 days
-  const daysBack = (dayOfWeek - 3 + 7) % 7
-  wednesday.setDate(now.getDate() - daysBack)
-  return wednesday.toISOString().split('T')[0]
+function toLocalIsoDate(value: Date): string {
+  const year = value.getFullYear()
+  const month = String(value.getMonth() + 1).padStart(2, '0')
+  const day = String(value.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-function isCurrentWeek(weekStart: string): boolean {
-  return weekStart === getCurrentWeekStart()
+function parseLocalIsoDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function getFallbackCurrentWeekStart(): string {
+  const now = new Date()
+  const dayOfWeek = now.getDay()
+  const thursday = new Date(now)
+  // Calculate days back to Thursday (day 4)
+  // Thursday=0 days, Friday=1 day, ..., Monday=4 days, Tuesday=5 days, Wednesday=6 days
+  const daysBack = (dayOfWeek - 4 + 7) % 7
+  thursday.setDate(now.getDate() - daysBack)
+  return toLocalIsoDate(thursday)
+}
+
+function isCurrentWeek(selectedWeek: string | null, currentWeekStart: string | null): boolean {
+  if (!selectedWeek || !currentWeekStart) return false
+  return selectedWeek === currentWeekStart
 }
 
 export function AccountabilityCheck() {
   const [accountabilityData, setAccountabilityData] = useState<PlayerAccountability[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekStart())
+  const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null)
+  const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
 
   // NEW: Track expanded state per player (mirror WeeklyChampions.tsx pattern)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
@@ -48,14 +62,35 @@ export function AccountabilityCheck() {
   })
 
   useEffect(() => {
-    loadAccountability()
+    initializeWeekConfig()
+  }, [])
+
+  useEffect(() => {
+    if (selectedWeek) {
+      loadAccountability(selectedWeek)
+    }
   }, [selectedWeek])
 
-  async function loadAccountability() {
+  async function initializeWeekConfig() {
+    const fallbackWeekStart = getFallbackCurrentWeekStart()
+    let resolvedWeekStart = fallbackWeekStart
+
+    try {
+      const currentWeekConfig = await api.getCurrentWeekConfig()
+      resolvedWeekStart = currentWeekConfig.week_start_date || fallbackWeekStart
+    } catch (error) {
+      console.error('Error loading week config, using fallback:', error)
+    }
+
+    setCurrentWeekStart(resolvedWeekStart)
+    setSelectedWeek(resolvedWeekStart)
+  }
+
+  async function loadAccountability(targetWeekStart: string) {
     try {
       setLoading(true)
       setError(null)
-      const data = await api.getAccountabilityCheck(selectedWeek)
+      const data = await api.getAccountabilityCheck(targetWeekStart)
       setAccountabilityData(data)
     } catch (error) {
       console.error('Error loading accountability check:', error)
@@ -66,10 +101,11 @@ export function AccountabilityCheck() {
   }
 
   function navigateWeek(dayOffset: number) {
-    const currentWeekDate = new Date(selectedWeek)
+    if (!selectedWeek) return
+    const currentWeekDate = parseLocalIsoDate(selectedWeek)
     const newWeekDate = new Date(currentWeekDate)
     newWeekDate.setDate(currentWeekDate.getDate() + dayOffset)
-    setSelectedWeek(newWeekDate.toISOString().split('T')[0])
+    setSelectedWeek(toLocalIsoDate(newWeekDate))
   }
 
   // NEW: Toggle expansion for a player
@@ -80,12 +116,12 @@ export function AccountabilityCheck() {
     }))
   }
 
-  if (loading) {
+  if (loading || !selectedWeek) {
     return <LoadingState componentName="accountability check" />
   }
 
   if (error) {
-    return <ErrorState error={error} onRetry={loadAccountability} />
+    return <ErrorState error={error} onRetry={() => loadAccountability(selectedWeek)} />
   }
 
   return (
@@ -106,8 +142,8 @@ export function AccountabilityCheck() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setSelectedWeek(getCurrentWeekStart())}
-                disabled={isCurrentWeek(selectedWeek)}
+                onClick={() => setSelectedWeek(currentWeekStart)}
+                disabled={isCurrentWeek(selectedWeek, currentWeekStart)}
               >
                 Current Week
               </Button>
@@ -115,7 +151,7 @@ export function AccountabilityCheck() {
                 size="sm"
                 variant="outline"
                 onClick={() => navigateWeek(7)}
-                disabled={isCurrentWeek(selectedWeek)}
+                disabled={isCurrentWeek(selectedWeek, currentWeekStart)}
               >
                 Next Week
               </Button>

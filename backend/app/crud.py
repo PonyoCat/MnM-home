@@ -1,4 +1,5 @@
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
 from typing import List, Optional
@@ -6,13 +7,61 @@ from datetime import date, datetime, timedelta
 
 
 def _get_week_start(target_date: Optional[date] = None) -> date:
-    """Return the Thursday of the target date's week."""
+    """Return week start for a target date using Python weekday numbering."""
+    return _get_week_start_for_weekday(target_date=target_date, week_start_weekday=3)
+
+
+def _get_week_start_for_weekday(
+    target_date: Optional[date] = None,
+    week_start_weekday: int = 3,
+) -> date:
+    """Return the configured week start for the target date."""
     if target_date is None:
         target_date = datetime.now().date()
-    # Calculate days back to Thursday (weekday 3)
-    # Thursday=0 days, Friday=1 day, ..., Monday=4 days, Tuesday=5 days, Wednesday=6 days
-    days_back = (target_date.weekday() - 3 + 7) % 7
+    days_back = (target_date.weekday() - week_start_weekday + 7) % 7
     return target_date - timedelta(days=days_back)
+
+
+async def get_week_start_weekday_for_date(
+    db: AsyncSession,
+    target_date: Optional[date] = None,
+) -> int:
+    """Resolve configured week-start weekday for a given target date."""
+    resolved_target_date = target_date or datetime.now().date()
+    try:
+        result = await db.execute(
+            select(models.WeekResetConfig).where(
+                models.WeekResetConfig.effective_from_date <= resolved_target_date,
+                or_(
+                    models.WeekResetConfig.effective_to_date.is_(None),
+                    models.WeekResetConfig.effective_to_date >= resolved_target_date,
+                ),
+            ).order_by(models.WeekResetConfig.effective_from_date.desc())
+        )
+        version = result.scalars().first()
+    except SQLAlchemyError:
+        await db.rollback()
+        version = None
+    if version:
+        return version.week_start_weekday
+    # Fallback keeps existing behavior if table/rows are not present yet.
+    return 3
+
+
+async def get_configured_week_start(
+    db: AsyncSession,
+    target_date: Optional[date] = None,
+) -> date:
+    """Return week start for a target date based on database-configured rules."""
+    resolved_target_date = target_date or datetime.now().date()
+    week_start_weekday = await get_week_start_weekday_for_date(
+        db=db,
+        target_date=resolved_target_date,
+    )
+    return _get_week_start_for_weekday(
+        target_date=resolved_target_date,
+        week_start_weekday=week_start_weekday,
+    )
 
 # Session Review CRUD
 async def get_session_review(db: AsyncSession) -> models.SessionReview:
@@ -284,12 +333,21 @@ async def delete_one_weekly_champion_instance(
 # Champion Pool CRUD
 async def get_champion_pools(
     db: AsyncSession,
-    player_name: str = None
+    player_name: Optional[str] = None,
+    week_start: Optional[date] = None
 ) -> List[models.ChampionPool]:
     """Get champion pools, optionally filtered by player"""
+    target_week_start = week_start or await get_configured_week_start(db)
+
     query = select(models.ChampionPool).order_by(
         models.ChampionPool.player_name,
         models.ChampionPool.champion_name
+    ).where(
+        models.ChampionPool.effective_from_week <= target_week_start,
+        or_(
+            models.ChampionPool.effective_to_week.is_(None),
+            models.ChampionPool.effective_to_week >= target_week_start,
+        ),
     )
 
     if player_name:
@@ -303,7 +361,23 @@ async def create_champion_pool(
     pool_data: schemas.ChampionPoolCreate
 ) -> models.ChampionPool:
     """Create new champion pool entry"""
-    pool = models.ChampionPool(**pool_data.model_dump())
+    current_week_start = await get_configured_week_start(db)
+
+    existing_result = await db.execute(
+        select(models.ChampionPool).where(
+            models.ChampionPool.player_name == pool_data.player_name,
+            models.ChampionPool.champion_name == pool_data.champion_name,
+            models.ChampionPool.effective_to_week.is_(None),
+        )
+    )
+    if existing_result.scalars().first():
+        raise ValueError("Champion already exists in active pool for this player")
+
+    pool = models.ChampionPool(
+        **pool_data.model_dump(),
+        effective_from_week=current_week_start,
+        effective_to_week=None,
+    )
     db.add(pool)
     await db.commit()
     await db.refresh(pool)
@@ -313,39 +387,105 @@ async def update_champion_pool(
     db: AsyncSession,
     pool_id: int,
     pool_data: schemas.ChampionPoolUpdate
-) -> models.ChampionPool:
-    """Update champion pool entry"""
+) -> Optional[models.ChampionPool]:
+    """Update champion pool entry with week-based versioning."""
     result = await db.execute(
         select(models.ChampionPool).where(models.ChampionPool.id == pool_id)
     )
     pool = result.scalars().first()
 
-    if pool:
-        # Update only provided fields
-        if pool_data.champion_name is not None:
-            pool.champion_name = pool_data.champion_name
-        if pool_data.description is not None:
-            pool.description = pool_data.description
-        if pool_data.pick_priority is not None:
-            pool.pick_priority = pool_data.pick_priority
+    if not pool:
+        return pool
 
+    current_week_start = await get_configured_week_start(db)
+    new_champion_name = (
+        pool_data.champion_name
+        if pool_data.champion_name is not None
+        else pool.champion_name
+    )
+    new_description = (
+        pool_data.description
+        if pool_data.description is not None
+        else pool.description
+    )
+    new_pick_priority = (
+        pool_data.pick_priority
+        if pool_data.pick_priority is not None
+        else pool.pick_priority
+    )
+    new_disabled = (
+        pool_data.disabled
+        if pool_data.disabled is not None
+        else pool.disabled
+    )
+
+    structural_change = (
+        new_champion_name != pool.champion_name
+        or new_disabled != pool.disabled
+    )
+
+    # Description/priority-only edits can stay in-place.
+    if not structural_change:
+        pool.description = new_description
+        pool.pick_priority = new_pick_priority
         await db.commit()
         await db.refresh(pool)
+        return pool
 
-    return pool
+    existing_result = await db.execute(
+        select(models.ChampionPool).where(
+            models.ChampionPool.player_name == pool.player_name,
+            models.ChampionPool.champion_name == new_champion_name,
+            models.ChampionPool.effective_to_week.is_(None),
+            models.ChampionPool.id != pool.id,
+        )
+    )
+    if existing_result.scalars().first():
+        raise ValueError("Champion already exists in active pool for this player")
+
+    # If this version already started this week, update in-place.
+    if pool.effective_from_week >= current_week_start:
+        pool.champion_name = new_champion_name
+        pool.description = new_description
+        pool.pick_priority = new_pick_priority
+        pool.disabled = new_disabled
+        await db.commit()
+        await db.refresh(pool)
+        return pool
+
+    # Close old version at the end of previous week and create the new active version.
+    pool.effective_to_week = current_week_start - timedelta(days=7)
+    versioned_pool = models.ChampionPool(
+        player_name=pool.player_name,
+        champion_name=new_champion_name,
+        description=new_description,
+        pick_priority=new_pick_priority,
+        disabled=new_disabled,
+        effective_from_week=current_week_start,
+        effective_to_week=None,
+    )
+    db.add(versioned_pool)
+    await db.commit()
+    await db.refresh(versioned_pool)
+
+    return versioned_pool
 
 async def delete_champion_pool(
     db: AsyncSession,
     pool_id: int
 ) -> bool:
-    """Delete champion pool entry"""
+    """Delete champion pool entry with week-based versioning."""
     result = await db.execute(
         select(models.ChampionPool).where(models.ChampionPool.id == pool_id)
     )
     pool = result.scalars().first()
 
     if pool:
-        await db.delete(pool)
+        current_week_start = await get_configured_week_start(db)
+        if pool.effective_from_week >= current_week_start:
+            await db.delete(pool)
+        else:
+            pool.effective_to_week = current_week_start - timedelta(days=7)
         await db.commit()
         return True
 
@@ -409,8 +549,8 @@ async def get_accountability_check(
     Check if each player has played at least 1 game on all their champions for a given week.
     Returns accountability status for all 5 players.
     """
-    # Calculate target week start (Thursday-based) if not provided
-    target_week_start = week_start or _get_week_start()
+    # Calculate target week start using configured week-boundary rules if not provided
+    target_week_start = week_start or await get_configured_week_start(db)
 
     # IMPORTANT: Always return all 5 players
     PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
@@ -418,10 +558,16 @@ async def get_accountability_check(
     accountability_data = []
 
     for player in PLAYERS:
-        # Get all champions in this player's pool
+        # Get all active (non-disabled) champions in this player's pool
         champions_result = await db.execute(
             select(models.ChampionPool).where(
-                models.ChampionPool.player_name == player
+                models.ChampionPool.player_name == player,
+                models.ChampionPool.disabled.is_(False),
+                models.ChampionPool.effective_from_week <= target_week_start,
+                or_(
+                    models.ChampionPool.effective_to_week.is_(None),
+                    models.ChampionPool.effective_to_week >= target_week_start,
+                ),
             )
         )
         champions = list(champions_result.scalars().all())
@@ -486,8 +632,8 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
     Get raw database data for accountability debugging.
     Returns champion pools and weekly champions for current week.
     """
-    # Calculate current week start
-    week_start = _get_week_start()
+    # Calculate current week start using configured week-boundary rules
+    week_start = await get_configured_week_start(db)
 
     # Get all champion pool entries
     pools_result = await db.execute(
@@ -517,7 +663,9 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
                 "player_name": p.player_name,
                 "champion_name": p.champion_name,
                 "description": p.description,
-                "pick_priority": p.pick_priority
+                "pick_priority": p.pick_priority,
+                "effective_from_week": p.effective_from_week.isoformat(),
+                "effective_to_week": p.effective_to_week.isoformat() if p.effective_to_week else None,
             }
             for p in champion_pools
         ],
@@ -531,6 +679,51 @@ async def get_accountability_debug_data(db: AsyncSession) -> dict:
             }
             for w in weekly_champions
         ]
+    }
+
+
+# Week Boundary Config CRUD
+async def list_week_reset_configs(
+    db: AsyncSession,
+) -> List[models.WeekResetConfig]:
+    """Return all week-reset configs ordered by effective start date descending."""
+    result = await db.execute(
+        select(models.WeekResetConfig).order_by(
+            models.WeekResetConfig.effective_from_date.desc()
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def get_current_week_config(
+    db: AsyncSession,
+    target_date: Optional[date] = None,
+) -> dict:
+    """Return resolved week-start config for a target date."""
+    resolved_target_date = target_date or datetime.now().date()
+    week_start_weekday = await get_week_start_weekday_for_date(
+        db=db,
+        target_date=resolved_target_date,
+    )
+    week_start_date = _get_week_start_for_weekday(
+        target_date=resolved_target_date,
+        week_start_weekday=week_start_weekday,
+    )
+    weekday_names = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ]
+
+    return {
+        "target_date": resolved_target_date,
+        "week_start_date": week_start_date,
+        "week_start_weekday": week_start_weekday,
+        "week_start_day_name": weekday_names[week_start_weekday],
     }
 
 
@@ -695,7 +888,15 @@ async def get_pool_coverage(
     Calculate what percentage of their champion pool each player has played this week.
     """
     # 1. Get all pools
-    pools_result = await db.execute(select(models.ChampionPool))
+    pools_result = await db.execute(
+        select(models.ChampionPool).where(
+            models.ChampionPool.effective_from_week <= week_start,
+            or_(
+                models.ChampionPool.effective_to_week.is_(None),
+                models.ChampionPool.effective_to_week >= week_start,
+            ),
+        )
+    )
     pools = list(pools_result.scalars().all())
     
     player_stats = {} # player -> {pool_size, played_count, played_champs_set}

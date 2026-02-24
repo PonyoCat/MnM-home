@@ -38,11 +38,8 @@ const PIE_COLORS = [
   '#ff6b8b', '#49d8c5', '#9db4ff', '#f7a8c4', '#d3e27a',
 ]
 
-const CHART_BG = '#071a22'
-const CHART_GRID = '#2b4e64'
-const CHART_TEXT = '#cbd5e1'
-const CHART_TOOLTIP_BG = '#0c2535'
-const CHART_TOOLTIP_BORDER = '#0f3f57'
+const CHART_GRID = 'hsl(var(--border))'
+const CHART_TEXT = 'hsl(var(--muted-foreground))'
 
 const TOP_N_OPTIONS = [5, 10, 15, 20] as const
 
@@ -59,20 +56,13 @@ interface CustomTooltipProps {
 function ChartTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   return (
-    <div
-      className="rounded-md border px-3 py-2 text-xs shadow-lg"
-      style={{
-        backgroundColor: CHART_TOOLTIP_BG,
-        borderColor: CHART_TOOLTIP_BORDER,
-        color: CHART_TEXT,
-      }}
-    >
-      {label && <p className="mb-1 font-semibold" style={{ color: '#f8fafc' }}>{label}</p>}
+    <div className="rounded-md border px-3 py-2 text-xs shadow-lg bg-card border-border text-card-foreground">
+      {label && <p className="mb-1 font-semibold">{label}</p>}
       {payload.map((entry) => (
         <div key={entry.name} className="flex items-center gap-2">
           <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: entry.color }} />
-          <span style={{ color: CHART_TEXT }}>{entry.name}:</span>
-          <span className="font-semibold" style={{ color: '#f8fafc' }}>{entry.value}</span>
+          <span className="text-muted-foreground">{entry.name}:</span>
+          <span className="font-semibold">{entry.value}</span>
         </div>
       ))}
     </div>
@@ -88,16 +78,9 @@ function PieTooltip({ active, payload }: PieTooltipProps) {
   if (!active || !payload || payload.length === 0) return null
   const item = payload[0]
   return (
-    <div
-      className="rounded-md border px-3 py-2 text-xs shadow-lg"
-      style={{
-        backgroundColor: CHART_TOOLTIP_BG,
-        borderColor: CHART_TOOLTIP_BORDER,
-        color: CHART_TEXT,
-      }}
-    >
-      <p className="font-semibold" style={{ color: '#f8fafc' }}>{item.name}</p>
-      <p style={{ color: CHART_TEXT }}>{item.value} game{item.value !== 1 ? 's' : ''}</p>
+    <div className="rounded-md border px-3 py-2 text-xs shadow-lg bg-card border-border text-card-foreground">
+      <p className="font-semibold">{item.name}</p>
+      <p className="text-muted-foreground">{item.value} game{item.value !== 1 ? 's' : ''}</p>
     </div>
   )
 }
@@ -233,7 +216,7 @@ export function DataPage() {
     }
   }, [fetchCharts, startDate, endDate])
 
-  const chartAxisStyle = { fill: CHART_TEXT, fontSize: 11 }
+  const chartAxisStyle = { fill: CHART_TEXT, fontSize: 11, fontFamily: 'inherit' }
 
   // Grouped bar data (all mode)
   const groupedBarData = useMemo(() => {
@@ -411,7 +394,7 @@ export function DataPage() {
 
         <div className="ml-auto text-right">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total Games</p>
-          <p className="text-2xl font-bold" style={{ color: '#f8fafc' }}>
+          <p className="text-2xl font-bold text-foreground">
             {(chartData.total_games ?? 0).toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground">{totalGamesLabel}</p>
@@ -566,10 +549,7 @@ export function DataPage() {
 
           {/* Trend line champion filter panel */}
           {chartType === 'trend' && mode === 'all' && !lineByPlayer && lineFilterOpen && chartData.line_champions.length > 0 && (
-            <div
-              className="mt-3 rounded-md border p-3 space-y-3"
-              style={{ borderColor: CHART_GRID, backgroundColor: '#0c1f2e' }}
-            >
+            <div className="mt-3 rounded-md border p-3 space-y-3 bg-muted/50">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Champion Filter</p>
               {PLAYERS.map(player => {
                 const champs = championsByPlayer[player] || []
@@ -600,13 +580,11 @@ export function DataPage() {
                         return (
                           <button
                             key={champ}
-                            className="text-xs px-2 py-0.5 rounded border"
-                            style={{
-                              backgroundColor: excluded ? 'transparent' : '#1e3a4a',
-                              color: excluded ? '#64748b' : CHART_TEXT,
-                              borderColor: excluded ? '#334155' : CHART_GRID,
-                              textDecoration: excluded ? 'line-through' : 'none',
-                            }}
+                            className={`text-xs px-2 py-0.5 rounded border transition-colors ${
+                              excluded
+                                ? 'opacity-40 line-through border-border text-muted-foreground'
+                                : 'bg-muted border-border text-foreground'
+                            }`}
                             onClick={() => toggleChampionLineFilter(champ)}
                           >
                             {champ}
@@ -668,7 +646,7 @@ export function DataPage() {
                     <XAxis dataKey="champion" tick={chartAxisStyle} angle={-35} textAnchor="end" interval={0} />
                     <YAxis tick={chartAxisStyle} allowDecimals={false} />
                     <Tooltip content={<ChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
-                    <Legend wrapperStyle={{ color: CHART_TEXT, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
                     {PLAYERS.map((player) => (
                       <Bar key={player} dataKey={player} fill={PLAYER_COLORS[player]} radius={[2, 2, 0, 0]} />
                     ))}
@@ -712,7 +690,7 @@ export function DataPage() {
                         layout="vertical"
                         align="right"
                         verticalAlign="middle"
-                        wrapperStyle={{ color: CHART_TEXT, fontSize: 11, paddingLeft: 8 }}
+                        wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 11, paddingLeft: 8 }}
                       />
                       {PLAYERS.map((player) => (
                         <Line
@@ -748,7 +726,7 @@ export function DataPage() {
                       layout="vertical"
                       align="right"
                       verticalAlign="middle"
-                      wrapperStyle={{ color: CHART_TEXT, fontSize: 11, paddingLeft: 8 }}
+                      wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 11, paddingLeft: 8 }}
                     />
                     {visibleLineChampions.map((champion, index) => (
                       <Line
@@ -787,7 +765,7 @@ export function DataPage() {
                       {effectivePieData.map((entry, index) => (
                         <Cell
                           key={index}
-                          fill={mode === 'all' ? (PLAYER_COLORS[entry.name] ?? PIE_COLORS[index % PIE_COLORS.length]) : PIE_COLORS[index % PIE_COLORS.length]}
+                          fill={PLAYER_COLORS[entry.name] ?? Object.values(PLAYER_COLORS)[index % Object.values(PLAYER_COLORS).length]}
                         />
                       ))}
                     </Pie>
@@ -796,7 +774,7 @@ export function DataPage() {
                       layout="vertical"
                       align="center"
                       verticalAlign="bottom"
-                      wrapperStyle={{ color: CHART_TEXT, fontSize: 11 }}
+                      wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                       formatter={(value, entry) => {
                         const item = entry.payload as { name: string; value: number } | undefined
                         return `${value}${item ? ` (${item.value})` : ''}`
@@ -815,10 +793,7 @@ export function DataPage() {
 
 function EmptyChart() {
   return (
-    <div
-      className="flex min-h-[240px] w-full items-center justify-center rounded-lg border border-dashed text-sm"
-      style={{ borderColor: CHART_GRID, color: CHART_TEXT, backgroundColor: CHART_BG }}
-    >
+    <div className="flex min-h-[240px] w-full items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground bg-muted/20">
       No data in selected range
     </div>
   )

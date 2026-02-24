@@ -1,7 +1,6 @@
 import { WeeklyChampions } from '@/components/WeeklyChampions'
 import { WeeklyMessage } from '@/components/WeeklyMessage'
 import { AccountabilityCheck } from '@/components/AccountabilityCheck'
-import { AccountabilityDebug } from '@/components/AccountabilityDebug'
 import { ClashInfo } from '@/components/ClashInfo'
 
 export function HomePage() {
@@ -26,9 +25,6 @@ export function HomePage() {
           <AccountabilityCheck />
         </div>
       </div>
-
-      {/* Database verification at bottom (full width) */}
-      <AccountabilityDebug />
     </div>
   )
 }
