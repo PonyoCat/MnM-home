@@ -130,8 +130,9 @@ export function WeeklyChampions() {
   }
 
   function getPlayerChampions(player: string): string[] {
-    // Get champions from the player's champion pool
+    // Get non-disabled champions from the player's champion pool
     return championPools[player]
+      .filter(c => !c.disabled)
       .map(c => c.champion_name)
       .sort((a, b) => a.localeCompare(b))
   }
