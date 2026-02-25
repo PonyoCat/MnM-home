@@ -144,9 +144,12 @@ export const api = {
   },
 
   // Week Config
-  async getCurrentWeekConfig(): Promise<CurrentWeekConfig> {
+  async getCurrentWeekConfig(targetDate?: string): Promise<CurrentWeekConfig> {
     try {
-      const response = await apiFetch('/api/week-config/current')
+      const url = targetDate
+        ? `/api/week-config/current?target_date=${targetDate}`
+        : '/api/week-config/current'
+      const response = await apiFetch(url)
       return response.json()
     } catch (error) {
       console.error('Failed to fetch current week config:', error)

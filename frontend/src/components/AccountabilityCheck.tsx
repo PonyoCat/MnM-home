@@ -100,12 +100,23 @@ export function AccountabilityCheck() {
     }
   }
 
-  function navigateWeek(dayOffset: number) {
+  async function navigateWeek(direction: 'prev' | 'next') {
     if (!selectedWeek) return
     const currentWeekDate = parseLocalIsoDate(selectedWeek)
-    const newWeekDate = new Date(currentWeekDate)
-    newWeekDate.setDate(currentWeekDate.getDate() + dayOffset)
-    setSelectedWeek(toLocalIsoDate(newWeekDate))
+    // For previous: land one day before this week's start so the backend resolves
+    // the correct prior week (handles transitions between different week-start weekdays).
+    // For next: land 7 days into the future which is always inside the next week.
+    const targetDate = new Date(currentWeekDate)
+    targetDate.setDate(currentWeekDate.getDate() + (direction === 'prev' ? -1 : 7))
+    try {
+      const config = await api.getCurrentWeekConfig(toLocalIsoDate(targetDate))
+      if (config.week_start_date) {
+        setSelectedWeek(config.week_start_date)
+      }
+    } catch {
+      // Fallback: plain 7-day offset
+      setSelectedWeek(toLocalIsoDate(targetDate))
+    }
   }
 
   // NEW: Toggle expansion for a player
@@ -135,7 +146,7 @@ export function AccountabilityCheck() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigateWeek(-7)}
+                onClick={() => navigateWeek('prev')}
               >
                 Previous Week
               </Button>
@@ -150,7 +161,7 @@ export function AccountabilityCheck() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => navigateWeek(7)}
+                onClick={() => navigateWeek('next')}
                 disabled={isCurrentWeek(selectedWeek, currentWeekStart)}
               >
                 Next Week
