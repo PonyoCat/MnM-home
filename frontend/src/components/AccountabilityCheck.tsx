@@ -105,13 +105,23 @@ export function AccountabilityCheck() {
     const currentWeekDate = parseLocalIsoDate(selectedWeek)
     // For previous: land one day before this week's start so the backend resolves
     // the correct prior week (handles transitions between different week-start weekdays).
-    // For next: land 7 days into the future which is always inside the next week.
+    // For next: land 7 days ahead which is inside the next week under normal rules.
     const targetDate = new Date(currentWeekDate)
     targetDate.setDate(currentWeekDate.getDate() + (direction === 'prev' ? -1 : 7))
     try {
       const config = await api.getCurrentWeekConfig(toLocalIsoDate(targetDate))
-      if (config.week_start_date) {
-        setSelectedWeek(config.week_start_date)
+      let newWeekStart = config.week_start_date
+      // For 'next': at a config transition boundary the +7 target resolves back to
+      // the current week (the transition overlap). Advance one more day to cross
+      // into the genuine next week.
+      if (direction === 'next' && newWeekStart === selectedWeek) {
+        const advancedDate = new Date(targetDate)
+        advancedDate.setDate(targetDate.getDate() + 1)
+        const advancedConfig = await api.getCurrentWeekConfig(toLocalIsoDate(advancedDate))
+        newWeekStart = advancedConfig.week_start_date
+      }
+      if (newWeekStart) {
+        setSelectedWeek(newWeekStart)
       }
     } catch {
       // Fallback: plain 7-day offset

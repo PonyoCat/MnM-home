@@ -52,16 +52,41 @@ async def get_configured_week_start(
     db: AsyncSession,
     target_date: Optional[date] = None,
 ) -> date:
-    """Return week start for a target date based on database-configured rules."""
+    """Return week start for a target date based on database-configured rules.
+
+    Handles config transitions: if the computed week start predates the active
+    rule's effective_from_date, the date falls in the pre-rule overlap period.
+    The prior rule's week start is returned instead, eliminating ghost weeks at
+    config boundaries.
+    """
     resolved_target_date = target_date or datetime.now().date()
-    week_start_weekday = await get_week_start_weekday_for_date(
-        db=db,
+    try:
+        result = await db.execute(
+            select(models.WeekResetConfig).where(
+                models.WeekResetConfig.effective_from_date <= resolved_target_date,
+                or_(
+                    models.WeekResetConfig.effective_to_date.is_(None),
+                    models.WeekResetConfig.effective_to_date >= resolved_target_date,
+                ),
+            ).order_by(models.WeekResetConfig.effective_from_date.desc())
+        )
+        rule = result.scalars().first()
+    except SQLAlchemyError:
+        await db.rollback()
+        rule = None
+    weekday = rule.week_start_weekday if rule else 3
+    week_start = _get_week_start_for_weekday(
         target_date=resolved_target_date,
+        week_start_weekday=weekday,
     )
-    return _get_week_start_for_weekday(
-        target_date=resolved_target_date,
-        week_start_weekday=week_start_weekday,
-    )
+    # If the computed week start predates this rule's own effective_from_date, the
+    # target falls in the gap before the new rule's first natural week boundary.
+    # Fall back to the prior rule by recursing with the day before effective_from_date.
+    if rule and week_start < rule.effective_from_date:
+        return await get_configured_week_start(
+            db, rule.effective_from_date - timedelta(days=1)
+        )
+    return week_start
 
 # Session Review CRUD
 async def get_session_review(db: AsyncSession) -> models.SessionReview:
@@ -701,14 +726,12 @@ async def get_current_week_config(
 ) -> dict:
     """Return resolved week-start config for a target date."""
     resolved_target_date = target_date or datetime.now().date()
-    week_start_weekday = await get_week_start_weekday_for_date(
+    week_start_date = await get_configured_week_start(
         db=db,
         target_date=resolved_target_date,
     )
-    week_start_date = _get_week_start_for_weekday(
-        target_date=resolved_target_date,
-        week_start_weekday=week_start_weekday,
-    )
+    # Derive weekday from the resolved date so transition weeks report the correct day.
+    week_start_weekday = week_start_date.weekday()
     weekday_names = [
         "Monday",
         "Tuesday",
