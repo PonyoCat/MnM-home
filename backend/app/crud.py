@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 
 
 def _get_week_start(target_date: Optional[date] = None) -> date:
-    """Return week start for a target date using Python weekday numbering."""
+    """Return active week label for a target date using Python weekday numbering."""
     return _get_week_start_for_weekday(target_date=target_date, week_start_weekday=3)
 
 
@@ -15,11 +15,19 @@ def _get_week_start_for_weekday(
     target_date: Optional[date] = None,
     week_start_weekday: int = 3,
 ) -> date:
-    """Return the configured week start for the target date."""
+    """Return active week label for the configured reset weekday.
+
+    Reset happens at the end of the configured weekday (23:59), not at 00:00.
+    With date-level resolution, we model this by resolving against (target_date - 1 day).
+    Example with Thursday=3:
+    - Thursday maps to previous Thursday (still outgoing week)
+    - Friday maps to current Thursday (new week started after Thursday 23:59)
+    """
     if target_date is None:
         target_date = datetime.now().date()
-    days_back = (target_date.weekday() - week_start_weekday + 7) % 7
-    return target_date - timedelta(days=days_back)
+    reference_date = target_date - timedelta(days=1)
+    days_back = (reference_date.weekday() - week_start_weekday + 7) % 7
+    return reference_date - timedelta(days=days_back)
 
 
 async def get_week_start_weekday_for_date(

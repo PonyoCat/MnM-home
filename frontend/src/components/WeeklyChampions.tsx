@@ -16,12 +16,14 @@ function toLocalIsoDate(value: Date): string {
 
 function getFallbackWeekStart(): string {
   const now = new Date()
-  const dayOfWeek = now.getDay()
-  const thursday = new Date(now)
-  // Calculate days back to Thursday (day 4)
-  // Thursday=0 days, Friday=1 day, ..., Monday=4 days, Tuesday=5 days, Wednesday=6 days
+  const referenceDate = new Date(now)
+  // Reset happens at end-of-Thursday, so Thursday still belongs to outgoing week.
+  // Use yesterday as the reference date to emulate a 23:59 reset with date-only math.
+  referenceDate.setDate(referenceDate.getDate() - 1)
+  const dayOfWeek = referenceDate.getDay()
+  const thursday = new Date(referenceDate)
   const daysBack = (dayOfWeek - 4 + 7) % 7
-  thursday.setDate(now.getDate() - daysBack)
+  thursday.setDate(referenceDate.getDate() - daysBack)
   return toLocalIsoDate(thursday)
 }
 
