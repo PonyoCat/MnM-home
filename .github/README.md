@@ -239,15 +239,6 @@ npm run build
 npm run lint
 ```
 
-
-## Additional Documentation
-
-- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Current implementation status
-- **[INITIAL.md](INITIAL.md)** - Original feature request
-- **[PRPs/league-dashboard.md](PRPs/league-dashboard.md)** - Full project specification
-- **[backend/README.md](backend/README.md)** - Backend-specific documentation
-- **[CLAUDE.md](CLAUDE.md)** - AI development instructions
-
 ## License
 
 Private project for internal team use.
