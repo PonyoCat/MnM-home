@@ -87,7 +87,20 @@
       "mcp__chrome-devtools__evaluate_script",
       "mcp__context7__query-docs",
       "mcp__context7__resolve-library-id",
-      "mcp__Neon__run_sql_transaction"
+      "mcp__Neon__run_sql_transaction",
+      "WebSearch",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:scrapfly.io)",
+      "WebFetch(domain:www.op.gg)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:maknee.github.io)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.netify.ai)",
+      "WebFetch(domain:codepull.com)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\" -Recurse -Force)",
+      "WebFetch(domain:developer.riotgames.com)",
+      "mcp__Neon__prepare_database_migration",
+      "mcp__Neon__complete_database_migration"
     ],
     "deny": []
   }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
@@ -17,21 +18,61 @@ import {
 } from './ui/alert-dialog'
 import { ErrorState, LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
-import type { ChampionPool } from '@/types/api.types'
+import type {
+  ChampionPool,
+  ExcludedFriend,
+  FullSyncStatus,
+  MatchHistory,
+  Player,
+  SyncAllResult,
+} from '@/types/api.types'
 
-const PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
+function formatRelativeTime(iso: string | null): string {
+  if (!iso) return 'never'
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return 'never'
+  const diffSec = Math.floor((Date.now() - then) / 1000)
+  if (diffSec < 60) return 'just now'
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} min ago`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} h ago`
+  return `${Math.floor(diffSec / 86400)} d ago`
+}
+
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 export function ChampionPoolList() {
-  const [playerPools, setPlayerPools] = useState<Record<string, ChampionPool[]>>({
-    Alex: [], Hans: [], Elias: [], Mikkel: [], Sinus: []
-  })
+  const [players, setPlayers] = useState<Player[]>([])
+  const [playerPools, setPlayerPools] = useState<Record<string, ChampionPool[]>>({})
+  const [matchHistory, setMatchHistory] = useState<Record<string, MatchHistory[]>>({})
+  const [excludedFriends, setExcludedFriends] = useState<Record<string, ExcludedFriend[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({
-    Alex: false, Hans: false, Elias: false, Mikkel: false, Sinus: false
-  })
+  const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({})
+  const [showHistoryFor, setShowHistoryFor] = useState<Record<string, boolean>>({})
 
-  // Form state for adding
+  // Riot ID inputs (controlled per player)
+  const [riotIdInputs, setRiotIdInputs] = useState<Record<string, string>>({})
+  const [savingRiotId, setSavingRiotId] = useState<Record<string, boolean>>({})
+
+  // Excluded friend inputs (controlled per player)
+  const [friendInputs, setFriendInputs] = useState<Record<string, string>>({})
+
+  // Quick sync state
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncSummary, setSyncSummary] = useState<SyncAllResult | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
+
+  // Full sync (background) state
+  const [fullSyncing, setFullSyncing] = useState(false)
+  const fullSyncToastId = useRef<string | number | null>(null)
+  const fullSyncInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Form state for adding champion
   const [newChampion, setNewChampion] = useState({
     player: '',
     name: '',
@@ -54,30 +95,68 @@ export function ChampionPoolList() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   useEffect(() => {
-    loadPools()
+    initializeData()
   }, [])
 
-  async function loadPools() {
+  async function initializeData() {
     try {
       setLoading(true)
       setError(null)
-      const data = await api.getChampionPools()
-      const grouped = PLAYERS.reduce((acc, player) => {
-        acc[player] = data.filter((p: ChampionPool) => p.player_name === player)
-        return acc
-      }, {} as Record<string, ChampionPool[]>)
-      setPlayerPools(grouped)
-    } catch (error) {
-      console.error('Error loading champion pools:', error)
-      setError(error as Error)
+
+      const [playerList, lastSync] = await Promise.all([
+        api.getPlayers(),
+        api.getLastSync(),
+      ])
+      setPlayers(playerList)
+      const names = playerList.map((p) => p.player_name)
+      setExpandedPlayers(Object.fromEntries(names.map((n) => [n, false])))
+      setRiotIdInputs(Object.fromEntries(playerList.map((p) => [p.player_name, p.riot_id ?? ''])))
+      setLastSyncedAt(lastSync.last_synced_at)
+
+      await loadPools(names)
+    } catch (e) {
+      console.error('Error loading players/pools:', e)
+      setError(e as Error)
     } finally {
       setLoading(false)
     }
   }
 
+  async function loadPools(playerNames: string[] = players.map((p) => p.player_name)) {
+    try {
+      setError(null)
+      const data = await api.getChampionPools()
+      const grouped = playerNames.reduce((acc, player) => {
+        acc[player] = data.filter((p: ChampionPool) => p.player_name === player)
+        return acc
+      }, {} as Record<string, ChampionPool[]>)
+      setPlayerPools(grouped)
+    } catch (e) {
+      console.error('Error loading champion pools:', e)
+      setError(e as Error)
+    }
+  }
+
+  async function loadMatchHistory(playerName: string) {
+    try {
+      const matches = await api.getPlayerMatches(playerName)
+      setMatchHistory((prev) => ({ ...prev, [playerName]: matches }))
+    } catch (e) {
+      console.error(`Failed to load matches for ${playerName}:`, e)
+    }
+  }
+
+  async function loadExcludedFriends(playerName: string) {
+    try {
+      const friends = await api.getExcludedFriends(playerName)
+      setExcludedFriends((prev) => ({ ...prev, [playerName]: friends }))
+    } catch (e) {
+      console.error(`Failed to load excluded friends for ${playerName}:`, e)
+    }
+  }
+
   async function addChampion(player: string) {
     if (!newChampion.name.trim()) return
-
     try {
       await api.createChampionPool({
         player_name: player,
@@ -87,8 +166,8 @@ export function ChampionPoolList() {
       })
       setNewChampion({ player: '', name: '', description: '', pickPriority: '' })
       await loadPools()
-    } catch (error) {
-      console.error('Error adding champion:', error)
+    } catch (e) {
+      console.error('Error adding champion:', e)
     }
   }
 
@@ -104,7 +183,6 @@ export function ChampionPoolList() {
 
   async function updateChampion() {
     if (!editingPool) return
-
     try {
       await api.updateChampionPool(editingPool.id, {
         champion_name: editForm.name,
@@ -114,25 +192,23 @@ export function ChampionPoolList() {
       setEditDialogOpen(false)
       setEditingPool(null)
       await loadPools()
-    } catch (error) {
-      console.error('Error updating champion:', error)
+    } catch (e) {
+      console.error('Error updating champion:', e)
     }
   }
 
   async function deleteChampion() {
     if (!poolToDelete) return
-
     const expectedText = `Delete ${poolToDelete.champion_name}`
     if (deleteConfirmText !== expectedText) return
-
     try {
       await api.deleteChampionPool(poolToDelete.id)
       setDeleteDialogOpen(false)
       setPoolToDelete(null)
       setDeleteConfirmText('')
       await loadPools()
-    } catch (error) {
-      console.error('Error deleting champion:', error)
+    } catch (e) {
+      console.error('Error deleting champion:', e)
     }
   }
 
@@ -140,133 +216,510 @@ export function ChampionPoolList() {
     try {
       await api.updateChampionPool(pool.id, { disabled: !pool.disabled })
       await loadPools()
-    } catch (error) {
-      console.error('Error toggling champion disabled state:', error)
+    } catch (e) {
+      console.error('Error toggling champion disabled state:', e)
     }
   }
 
-  function togglePlayerExpanded(player: string) {
-    setExpandedPlayers(prev => ({ ...prev, [player]: !prev[player] }))
+  async function togglePlayerExpanded(playerName: string) {
+    const willExpand = !expandedPlayers[playerName]
+    setExpandedPlayers((prev) => ({ ...prev, [playerName]: willExpand }))
+    if (willExpand && !excludedFriends[playerName]) {
+      await loadExcludedFriends(playerName)
+    }
+  }
+
+  async function toggleHistory(playerName: string) {
+    const willShow = !showHistoryFor[playerName]
+    setShowHistoryFor((prev) => ({ ...prev, [playerName]: willShow }))
+    if (willShow && !matchHistory[playerName]) {
+      await loadMatchHistory(playerName)
+    }
+  }
+
+  async function saveRiotId(playerName: string) {
+    const value = (riotIdInputs[playerName] ?? '').trim()
+    if (!value || !value.includes('#')) {
+      alert('Riot ID must be in "Name#Tag" format')
+      return
+    }
+    setSavingRiotId((prev) => ({ ...prev, [playerName]: true }))
+    try {
+      const updated = await api.updatePlayer(playerName, { riot_id: value })
+      setPlayers((prev) =>
+        prev.map((p) => (p.player_name === playerName ? updated : p))
+      )
+    } catch (e) {
+      console.error('Failed to save Riot ID:', e)
+      alert('Failed to save Riot ID')
+    } finally {
+      setSavingRiotId((prev) => ({ ...prev, [playerName]: false }))
+    }
+  }
+
+  async function addFriend(playerName: string) {
+    const value = (friendInputs[playerName] ?? '').trim()
+    if (!value || !value.includes('#')) {
+      alert('Friend Riot ID must be in "Name#Tag" format')
+      return
+    }
+    try {
+      await api.addExcludedFriend(playerName, { riot_id: value })
+      setFriendInputs((prev) => ({ ...prev, [playerName]: '' }))
+      await loadExcludedFriends(playerName)
+    } catch (e) {
+      console.error('Failed to add excluded friend:', e)
+      alert('Failed to add excluded friend')
+    }
+  }
+
+  async function removeFriend(playerName: string, friendId: number) {
+    try {
+      await api.removeExcludedFriend(playerName, friendId)
+      await loadExcludedFriends(playerName)
+    } catch (e) {
+      console.error('Failed to remove friend:', e)
+    }
+  }
+
+  function stopFullSyncPolling() {
+    if (fullSyncInterval.current !== null) {
+      clearInterval(fullSyncInterval.current)
+      fullSyncInterval.current = null
+    }
+    setFullSyncing(false)
+  }
+
+  function startFullSyncPolling(runId: number) {
+    setFullSyncing(true)
+    const toastId = toast.loading('Full sync running... starting', { duration: Infinity })
+    fullSyncToastId.current = toastId
+
+    fullSyncInterval.current = setInterval(async () => {
+      let statusData: FullSyncStatus
+      try {
+        statusData = await api.getFullSyncStatus(runId)
+      } catch {
+        return // transient fetch error, keep polling
+      }
+
+      const p = statusData.progress
+      if (statusData.status === 'running') {
+        if (p) {
+          toast.loading(
+            `Full sync running... ${p.players_done}/${p.players_total} players \u2014 ${p.games_synced_so_far} games synced${p.current_player ? ` (${p.current_player})` : ''}`,
+            { id: toastId, duration: Infinity },
+          )
+        }
+        return
+      }
+
+      // Terminal state
+      stopFullSyncPolling()
+      const r = statusData.result
+      if (statusData.status === 'success') {
+        toast.success(
+          `Full sync done \u2014 ${r?.total_games_synced ?? 0} new games, ${r?.total_games_found ?? 0} found`,
+          { id: toastId, duration: 8000 },
+        )
+        if (r?.finished_at) setLastSyncedAt(r.finished_at)
+      } else if (statusData.status === 'partial') {
+        toast.warning(
+          `Full sync partial \u2014 ${r?.total_games_synced ?? 0} games synced, failed: ${r?.failed_players?.join(', ') ?? 'some players'}`,
+          { id: toastId, duration: 10000 },
+        )
+        if (r?.finished_at) setLastSyncedAt(r.finished_at)
+      } else {
+        toast.error(`Full sync failed \u2014 ${r?.message ?? statusData.status}`, {
+          id: toastId,
+          duration: 10000,
+        })
+      }
+    }, 4000)
+  }
+
+  async function runFullSync() {
+    if (fullSyncing) return
+    try {
+      const started = await api.startFullSync()
+      startFullSyncPolling(started.run_id)
+    } catch (e) {
+      const err = e as Error & { status?: number }
+      if (err.status === 409) {
+        // A sync is already running — get its run_id from the error detail if possible
+        // or just inform the user
+        toast.error('Full sync already in progress')
+      } else if (err.status === 502) {
+        toast.error('Riot API unreachable or API key invalid')
+      } else {
+        toast.error(`Full sync failed to start: ${err.message ?? 'unknown error'}`)
+      }
+    }
+  }
+
+  async function runSync() {
+    setSyncingAll(true)
+    setSyncError(null)
+    setSyncSummary(null)
+    try {
+      const result = await api.syncAllPlayerGames()
+      setSyncSummary(result)
+      setLastSyncedAt(result.finished_at)
+      // Refresh match history for any expanded players
+      const refreshTargets = Object.keys(showHistoryFor).filter((p) => showHistoryFor[p])
+      await Promise.all(refreshTargets.map((p) => loadMatchHistory(p)))
+    } catch (e) {
+      const err = e as Error & { status?: number }
+      console.error('Sync failed:', err)
+      if (err.status === 409) {
+        setSyncError('Sync already in progress')
+      } else if (err.status === 502) {
+        setSyncError('Riot API unreachable or API key invalid')
+      } else if (err.status === 429) {
+        setSyncError('Riot API rate limit exceeded -- try again in a minute')
+      } else {
+        setSyncError(`Sync failed: ${err.message ?? 'unknown error'}`)
+      }
+    } finally {
+      setSyncingAll(false)
+    }
   }
 
   if (loading && !error) {
-    return <LoadingState componentName="champion pools" />
+    return <LoadingState componentName="player info" />
+  }
+  if (error) {
+    return <ErrorState error={error} onRetry={initializeData} componentName="player info" />
   }
 
-  if (error) {
-    return <ErrorState error={error} onRetry={loadPools} componentName="champion pools" />
-  }
+  const noRiotIds = players.every((p) => !p.riot_id)
 
   return (
     <>
+      {/* Top header bar with single Update Stats button */}
+      <Card className="mb-4">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <CardTitle>Player Info</CardTitle>
+            <div className="flex items-center gap-3">
+              <span
+                className="text-sm text-muted-foreground"
+                title={lastSyncedAt ?? 'never'}
+              >
+                Last synced: {formatRelativeTime(lastSyncedAt)}
+              </span>
+              <Button
+                variant="outline"
+                onClick={runFullSync}
+                disabled={fullSyncing || noRiotIds}
+                title={noRiotIds ? 'No players have a Riot ID set' : fullSyncing ? 'Full sync in progress' : 'Fetch full match history for all players'}
+              >
+                {fullSyncing ? 'Full Sync...' : 'Full Sync'}
+              </Button>
+              <Button
+                onClick={runSync}
+                disabled={syncingAll || noRiotIds}
+                title={noRiotIds ? 'No players have a Riot ID set' : ''}
+              >
+                {syncingAll ? 'Syncing...' : 'Update Stats'}
+              </Button>
+            </div>
+          </div>
+          {syncSummary && (
+            <div className="mt-3 rounded-md border border-green-300 bg-green-50 p-2 text-sm text-green-900 dark:bg-green-950 dark:text-green-100">
+              Synced {syncSummary.total_games_synced} new games across{' '}
+              {syncSummary.per_player.length - syncSummary.failed_players.length} players
+              ({syncSummary.total_games_excluded} excluded by eligibility,{' '}
+              {syncSummary.total_games_already_present} already counted,{' '}
+              {syncSummary.total_games_found} total found)
+              {syncSummary.failed_players.length > 0 && (
+                <div className="mt-1 text-red-700 dark:text-red-400">
+                  Failed: {syncSummary.failed_players.join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+          {syncError && (
+            <div className="mt-3 rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-900 dark:bg-red-950 dark:text-red-100">
+              {syncError}
+            </div>
+          )}
+        </CardHeader>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Champion Pools</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {PLAYERS.map(player => (
-            <div key={player} className="space-y-3">
-              <h3
-                className="font-semibold text-lg cursor-pointer hover:text-primary transition-colors flex items-center gap-2"
-                onClick={() => togglePlayerExpanded(player)}
-              >
-                <span>{expandedPlayers[player] ? '▼' : '▶'}</span>
-                {player}
-              </h3>
+          {players.map((player) => {
+            const name = player.player_name
+            const isExpanded = expandedPlayers[name]
+            const matches = matchHistory[name] ?? []
+            const friends = excludedFriends[name] ?? []
+            const showHistory = showHistoryFor[name]
 
-              {expandedPlayers[player] && (
-                <>
-                  {/* Add form */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                    <Input
-                      placeholder="Champion name..."
-                      value={newChampion.player === player ? newChampion.name : ''}
-                      onChange={(e) => setNewChampion({
-                        player,
-                        name: e.target.value,
-                        description: newChampion.player === player ? newChampion.description : '',
-                        pickPriority: newChampion.player === player ? newChampion.pickPriority : ''
-                      })}
-                    />
-                    <Input
-                      placeholder="Description..."
-                      value={newChampion.player === player ? newChampion.description : ''}
-                      onChange={(e) => setNewChampion({
-                        player,
-                        name: newChampion.player === player ? newChampion.name : '',
-                        description: e.target.value,
-                        pickPriority: newChampion.player === player ? newChampion.pickPriority : ''
-                      })}
-                    />
-                    <Input
-                      placeholder="Pick priority..."
-                      value={newChampion.player === player ? newChampion.pickPriority : ''}
-                      onChange={(e) => setNewChampion({
-                        player,
-                        name: newChampion.player === player ? newChampion.name : '',
-                        description: newChampion.player === player ? newChampion.description : '',
-                        pickPriority: e.target.value
-                      })}
-                    />
-                    <Button onClick={() => addChampion(player)}>Add</Button>
-                  </div>
-
-                  {/* Table */}
-                  {playerPools[player].length > 0 && (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Champion</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Pick Priority</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {playerPools[player].map(pool => (
-                          <TableRow key={pool.id} className={pool.disabled ? 'opacity-50' : ''}>
-                            <TableCell className="font-medium">
-                              {pool.champion_name}
-                              {pool.disabled && (
-                                <span className="ml-2 text-xs text-muted-foreground">(disabled)</span>
-                              )}
-                            </TableCell>
-                            <TableCell>{pool.description}</TableCell>
-                            <TableCell>{pool.pick_priority}</TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Button size="sm" onClick={() => openEditDialog(pool)}>
-                                  Edit
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => toggleDisabled(pool)}
-                                >
-                                  {pool.disabled ? 'Enable' : 'Disable'}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => {
-                                    setPoolToDelete(pool)
-                                    setDeleteConfirmText('')
-                                    setDeleteDialogOpen(true)
-                                  }}
-                                >
-                                  Delete
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+            return (
+              <div key={name} className="space-y-3">
+                <h3
+                  className="font-semibold text-lg cursor-pointer hover:text-primary transition-colors flex items-center gap-2"
+                  onClick={() => togglePlayerExpanded(name)}
+                >
+                  <span>{isExpanded ? '▼' : '▶'}</span>
+                  {name}
+                  {player.riot_id && (
+                    <span className="text-xs text-muted-foreground font-normal">
+                      ({player.riot_id})
+                    </span>
                   )}
-                </>
-              )}
-            </div>
-          ))}
+                </h3>
+
+                {isExpanded && (
+                  <>
+                    {/* Riot ID Section */}
+                    <div className="rounded-md border border-border p-3 space-y-2">
+                      <div className="text-sm font-medium">Riot ID</div>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Name#Tag (e.g. Ponyo#Meeps)"
+                          value={riotIdInputs[name] ?? ''}
+                          onChange={(e) =>
+                            setRiotIdInputs((prev) => ({ ...prev, [name]: e.target.value }))
+                          }
+                        />
+                        <Button
+                          onClick={() => saveRiotId(name)}
+                          disabled={savingRiotId[name]}
+                        >
+                          {savingRiotId[name] ? 'Saving...' : 'Save'}
+                        </Button>
+                      </div>
+                      {!player.riot_id && (
+                        <div className="text-xs text-muted-foreground">Not set</div>
+                      )}
+                    </div>
+
+                    {/* Excluded Friends Section */}
+                    <div className="rounded-md border border-border p-3 space-y-2">
+                      <div className="text-sm font-medium">Excluded Friends</div>
+                      <div className="text-xs text-muted-foreground">
+                        Games queued with these Riot IDs on your team won't count toward accountability.
+                      </div>
+                      <div className="space-y-1">
+                        {friends.length === 0 && (
+                          <div className="text-xs text-muted-foreground">No excluded friends.</div>
+                        )}
+                        {friends.map((f) => (
+                          <div key={f.id} className="flex items-center gap-2 text-sm">
+                            <span>{f.riot_id}</span>
+                            {!f.puuid && (
+                              <span
+                                className="text-xs text-amber-600"
+                                title="Not yet resolved by Riot API -- may be unreachable"
+                              >
+                                (unresolved)
+                              </span>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => removeFriend(name, f.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="FriendName#Tag"
+                          value={friendInputs[name] ?? ''}
+                          onChange={(e) =>
+                            setFriendInputs((prev) => ({ ...prev, [name]: e.target.value }))
+                          }
+                        />
+                        <Button onClick={() => addFriend(name)}>Add</Button>
+                      </div>
+                    </div>
+
+                    {/* Match History Section */}
+                    <div className="rounded-md border border-border p-3 space-y-2">
+                      <div
+                        className="flex items-center gap-2 cursor-pointer text-sm font-medium"
+                        onClick={() => toggleHistory(name)}
+                      >
+                        <span>{showHistory ? '▼' : '▶'}</span>
+                        Match History
+                      </div>
+                      {showHistory && (
+                        <>
+                          {matches.length === 0 ? (
+                            <div className="text-xs text-muted-foreground">
+                              No matches synced yet.
+                            </div>
+                          ) : (
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Champion</TableHead>
+                                  <TableHead>Result</TableHead>
+                                  <TableHead>KDA</TableHead>
+                                  <TableHead>CS</TableHead>
+                                  <TableHead>Vision</TableHead>
+                                  <TableHead>Gold</TableHead>
+                                  <TableHead>Damage</TableHead>
+                                  <TableHead>Role</TableHead>
+                                  <TableHead>Duration</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {matches.map((m) => {
+                                  const greyed = m.user_excluded || m.queue_id !== 420
+                                  return (
+                                    <TableRow
+                                      key={m.id}
+                                      className={
+                                        greyed
+                                          ? 'opacity-50'
+                                          : m.won
+                                          ? 'bg-green-50 dark:bg-green-950/30'
+                                          : 'bg-red-50 dark:bg-red-950/30'
+                                      }
+                                      title={
+                                        m.user_excluded
+                                          ? 'Manually excluded'
+                                          : m.queue_id !== 420
+                                          ? `Queue ${m.queue_id} (not ranked solo/duo)`
+                                          : ''
+                                      }
+                                    >
+                                      <TableCell className="font-medium">
+                                        {m.champion_name}
+                                      </TableCell>
+                                      <TableCell>
+                                        {m.won ? 'Win' : 'Loss'}
+                                      </TableCell>
+                                      <TableCell>
+                                        {m.kills}/{m.deaths}/{m.assists}
+                                      </TableCell>
+                                      <TableCell>{m.cs}</TableCell>
+                                      <TableCell>{m.vision_score}</TableCell>
+                                      <TableCell>{m.gold_earned.toLocaleString()}</TableCell>
+                                      <TableCell>
+                                        {m.damage_to_champions.toLocaleString()}
+                                      </TableCell>
+                                      <TableCell>{m.team_position ?? '-'}</TableCell>
+                                      <TableCell>
+                                        {formatDuration(m.game_duration_seconds)}
+                                      </TableCell>
+                                    </TableRow>
+                                  )
+                                })}
+                              </TableBody>
+                            </Table>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Add champion form */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                      <Input
+                        placeholder="Champion name..."
+                        value={newChampion.player === name ? newChampion.name : ''}
+                        onChange={(e) =>
+                          setNewChampion({
+                            player: name,
+                            name: e.target.value,
+                            description: newChampion.player === name ? newChampion.description : '',
+                            pickPriority: newChampion.player === name ? newChampion.pickPriority : ''
+                          })
+                        }
+                      />
+                      <Input
+                        placeholder="Description..."
+                        value={newChampion.player === name ? newChampion.description : ''}
+                        onChange={(e) =>
+                          setNewChampion({
+                            player: name,
+                            name: newChampion.player === name ? newChampion.name : '',
+                            description: e.target.value,
+                            pickPriority: newChampion.player === name ? newChampion.pickPriority : ''
+                          })
+                        }
+                      />
+                      <Input
+                        placeholder="Pick priority..."
+                        value={newChampion.player === name ? newChampion.pickPriority : ''}
+                        onChange={(e) =>
+                          setNewChampion({
+                            player: name,
+                            name: newChampion.player === name ? newChampion.name : '',
+                            description: newChampion.player === name ? newChampion.description : '',
+                            pickPriority: e.target.value
+                          })
+                        }
+                      />
+                      <Button onClick={() => addChampion(name)}>Add</Button>
+                    </div>
+
+                    {/* Champion table */}
+                    {(playerPools[name] ?? []).length > 0 && (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Champion</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Pick Priority</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(playerPools[name] ?? []).map((pool) => (
+                            <TableRow key={pool.id} className={pool.disabled ? 'opacity-50' : ''}>
+                              <TableCell className="font-medium">
+                                {pool.champion_name}
+                                {pool.disabled && (
+                                  <span className="ml-2 text-xs text-muted-foreground">(disabled)</span>
+                                )}
+                              </TableCell>
+                              <TableCell>{pool.description}</TableCell>
+                              <TableCell>{pool.pick_priority}</TableCell>
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button size="sm" onClick={() => openEditDialog(pool)}>
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => toggleDisabled(pool)}
+                                  >
+                                    {pool.disabled ? 'Enable' : 'Disable'}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => {
+                                      setPoolToDelete(pool)
+                                      setDeleteConfirmText('')
+                                      setDeleteDialogOpen(true)
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          })}
         </CardContent>
       </Card>
 
@@ -308,9 +761,7 @@ export function ChampionPoolList() {
             <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={updateChampion}>
-              Save Changes
-            </Button>
+            <Button onClick={updateChampion}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -333,11 +784,13 @@ export function ChampionPoolList() {
             />
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setDeleteDialogOpen(false)
-              setPoolToDelete(null)
-              setDeleteConfirmText('')
-            }}>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setPoolToDelete(null)
+                setDeleteConfirmText('')
+              }}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction

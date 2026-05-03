@@ -64,7 +64,7 @@ export function Navigation() {
               }`
             }
           >
-            Champion Pool
+            Player Info
           </NavLink>
         </div>
         <ThemeToggle />

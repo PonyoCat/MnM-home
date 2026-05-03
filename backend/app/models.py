@@ -8,9 +8,12 @@ from sqlalchemy import (
     DateTime,
     CheckConstraint,
     Index,
+    UniqueConstraint,
+    JSON,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from .database import Base
 
 class SessionReview(Base):
@@ -29,6 +32,8 @@ class WeeklyChampion(Base):
     champion_name = Column(String(255), nullable=False)
     played = Column(Boolean, default=False)
     week_start_date = Column(Date, nullable=False, index=True)
+    won = Column(Boolean, nullable=True)  # True=win, False=loss, None=manual entry
+    riot_match_id = Column(String(255), nullable=True, index=True)  # links to match_history; null for manual entries
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 class DraftNote(Base):
@@ -154,3 +159,82 @@ class WeekResetConfig(Base):
     effective_from_date = Column(Date, nullable=False)
     effective_to_date = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class Player(Base):
+    """Roster player with Riot identity (cached PUUID)."""
+    __tablename__ = "players"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    player_name = Column(String(255), unique=True, nullable=False, index=True)
+    riot_id = Column(String(255), nullable=True)  # "Ponyo#Meeps"
+    puuid = Column(String(255), nullable=True)  # Cached PUUID from Riot API
+    region = Column(String(50), nullable=False, default="euw")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class MatchHistory(Base):
+    """One row per fetched match per roster player."""
+    __tablename__ = "match_history"
+    __table_args__ = (
+        UniqueConstraint("player_name", "riot_match_id", name="uq_player_match"),
+        Index("ix_match_history_player", "player_name"),
+        Index("ix_match_history_week", "week_start_date"),
+        Index("ix_match_history_match_id", "riot_match_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_name = Column(String(255), nullable=False)
+    riot_match_id = Column(String(255), nullable=False)  # "EUW1_1234567890"
+    champion_name = Column(String(255), nullable=False)
+    won = Column(Boolean, nullable=False)
+    kills = Column(Integer, nullable=False, default=0)
+    deaths = Column(Integer, nullable=False, default=0)
+    assists = Column(Integer, nullable=False, default=0)
+    cs = Column(Integer, nullable=False, default=0)
+    vision_score = Column(Integer, nullable=False, default=0)
+    gold_earned = Column(Integer, nullable=False, default=0)
+    damage_to_champions = Column(Integer, nullable=False, default=0)
+    game_duration_seconds = Column(Integer, nullable=False, default=0)
+    team_position = Column(String(50), nullable=True)
+    game_start_time = Column(DateTime(timezone=True), nullable=False)
+    week_start_date = Column(Date, nullable=False)
+    queue_id = Column(Integer, nullable=False, default=420)
+    team_puuids = Column(JSONB, nullable=False, default=list)
+    user_excluded = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExcludedFriend(Base):
+    """A Riot ID that, when present on a roster player's team, excludes that match from accountability."""
+    __tablename__ = "excluded_friends"
+    __table_args__ = (
+        UniqueConstraint("player_name", "riot_id", name="uq_excluded_friend_per_player"),
+        Index("ix_excluded_friends_player", "player_name"),
+        Index("ix_excluded_friends_puuid", "puuid"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    player_name = Column(String(255), nullable=False)  # Roster player who owns this exclusion
+    riot_id = Column(String(255), nullable=False)  # "Andy#EUW"
+    puuid = Column(String(255), nullable=True)  # Cached PUUID; null until first resolved
+    region = Column(String(50), nullable=False, default="euw")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class SyncRun(Base):
+    """One row per sync attempt (manual or scheduled)."""
+    __tablename__ = "sync_runs"
+    __table_args__ = (
+        Index("ix_sync_runs_finished_at", "finished_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    trigger = Column(String(20), nullable=False)  # 'scheduled' | 'manual'
+    status = Column(String(20), nullable=False)  # 'running' | 'success' | 'partial' | 'failed'
+    summary = Column(JSONB, nullable=True)
+    progress = Column(JSONB, nullable=True)  # incremental progress for long-running syncs

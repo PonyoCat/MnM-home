@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime, date
-from typing import Optional
+from typing import Any, Optional
 
 # Session Review Schemas
 class SessionReviewBase(BaseModel):
@@ -25,6 +25,8 @@ class WeeklyChampionBase(BaseModel):
     champion_name: str
     played: bool = False
     week_start_date: date
+    won: Optional[bool] = None
+    riot_match_id: Optional[str] = None
 
 class WeeklyChampionCreate(WeeklyChampionBase):
     pass
@@ -213,3 +215,133 @@ class CurrentWeekConfig(BaseModel):
     week_start_date: date
     week_start_weekday: int
     week_start_day_name: str
+
+
+# Player Schemas
+class PlayerBase(BaseModel):
+    player_name: str
+    riot_id: Optional[str] = None
+    region: str = "euw"
+
+
+class PlayerCreate(PlayerBase):
+    pass
+
+
+class PlayerUpdate(BaseModel):
+    riot_id: Optional[str] = None
+    region: Optional[str] = None
+
+
+class Player(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    player_name: str
+    riot_id: Optional[str] = None
+    puuid: Optional[str] = None
+    region: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# Match History Schemas
+class MatchHistoryBase(BaseModel):
+    player_name: str
+    riot_match_id: str
+    champion_name: str
+    won: bool
+    kills: int = 0
+    deaths: int = 0
+    assists: int = 0
+    cs: int = 0
+    vision_score: int = 0
+    gold_earned: int = 0
+    damage_to_champions: int = 0
+    game_duration_seconds: int = 0
+    team_position: Optional[str] = None
+    game_start_time: datetime
+    week_start_date: date
+    queue_id: int = 420
+    user_excluded: bool = False
+
+
+class MatchHistory(MatchHistoryBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: Optional[datetime] = None
+
+
+# Excluded Friend Schemas
+class ExcludedFriendBase(BaseModel):
+    riot_id: str
+    region: str = "euw"
+
+
+class ExcludedFriendCreate(ExcludedFriendBase):
+    pass
+
+
+class ExcludedFriend(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    player_name: str
+    riot_id: str
+    puuid: Optional[str] = None
+    region: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+# Sync Result Schemas
+class SyncResult(BaseModel):
+    player_name: str
+    games_synced: int = 0
+    games_excluded: int = 0
+    games_already_present: int = 0
+    total_games_found: int = 0
+    message: str = ""
+
+
+class SyncAllResult(BaseModel):
+    trigger: str
+    started_at: datetime
+    finished_at: datetime
+    per_player: list[SyncResult] = []
+    total_games_synced: int = 0
+    total_games_excluded: int = 0
+    total_games_already_present: int = 0
+    total_games_found: int = 0
+    failed_players: list[str] = []
+    message: str = ""
+
+
+class FullSyncStarted(BaseModel):
+    """Returned immediately when a background full sync is fired."""
+    run_id: int
+    status: str = "running"
+    message: str = ""
+
+
+class FullSyncProgress(BaseModel):
+    """Live progress written to sync_runs.progress during a background full sync."""
+    players_total: int = 0
+    players_done: int = 0
+    current_player: Optional[str] = None
+    games_synced_so_far: int = 0
+    games_found_so_far: int = 0
+    completed_players: list[str] = []
+
+
+class FullSyncStatus(BaseModel):
+    """Returned by GET /full-sync/status/{run_id}."""
+    run_id: int
+    status: str  # running | success | partial | failed
+    progress: Optional[FullSyncProgress] = None
+    result: Optional[SyncAllResult] = None
+
+
+class LastSync(BaseModel):
+    last_synced_at: Optional[datetime] = None

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
 import { Navigation } from '@/components/Navigation'
@@ -55,6 +56,7 @@ function App() {
           </div>
         </div>
       </div>
+      <Toaster richColors position="bottom-right" />
     </BrowserRouter>
   )
 }

@@ -1,5 +1,15 @@
 import { withRetry, fetchWithTimeout } from './retry'
-import type { CurrentWeekConfig, WeekBoundaryVersion } from '@/types/api.types'
+import type {
+  CurrentWeekConfig,
+  ExcludedFriend,
+  FullSyncStarted,
+  FullSyncStatus,
+  LastSync,
+  MatchHistory,
+  Player,
+  SyncAllResult,
+  WeekBoundaryVersion,
+} from '@/types/api.types'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 const CHARTS_BASE = '/api/analytics/charts'
@@ -579,7 +589,112 @@ export const api = {
       console.error('Failed to update clash dates:', error)
       throw error
     }
-  }
+  },
+  
+  // Players
+  async getPlayers(): Promise<Player[]> {
+    const response = await apiFetch('/api/players/')
+    return response.json()
+  },
+
+  async getPlayerNames(): Promise<string[]> {
+    const players = await this.getPlayers()
+    return players.map((p) => p.player_name)
+  },
+
+  async getPlayer(playerName: string): Promise<Player> {
+    const response = await apiFetch(`/api/players/${encodeURIComponent(playerName)}`)
+    return response.json()
+  },
+
+  async updatePlayer(
+    playerName: string,
+    data: { riot_id?: string | null; region?: string }
+  ): Promise<Player> {
+    const response = await apiFetch(`/api/players/${encodeURIComponent(playerName)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    })
+    return response.json()
+  },
+
+  async getPlayerMatches(
+    playerName: string,
+    weekStart?: string
+  ): Promise<MatchHistory[]> {
+    const search = new URLSearchParams()
+    if (weekStart) search.set('week_start', weekStart)
+    const qs = search.toString()
+    const url = qs
+      ? `/api/players/${encodeURIComponent(playerName)}/matches?${qs}`
+      : `/api/players/${encodeURIComponent(playerName)}/matches`
+    const response = await apiFetch(url)
+    return response.json()
+  },
+
+  async deleteMatch(playerName: string, matchId: number): Promise<void> {
+    await apiFetch(
+      `/api/players/${encodeURIComponent(playerName)}/matches/${matchId}`,
+      { method: 'DELETE' }
+    )
+  },
+
+  async syncAllPlayerGames(weekStart?: string): Promise<SyncAllResult> {
+    const search = new URLSearchParams()
+    if (weekStart) search.set('week_start', weekStart)
+    const qs = search.toString()
+    const url = qs
+      ? `/api/players/sync-all?${qs}`
+      : '/api/players/sync-all'
+    const response = await apiFetch(url, { method: 'POST' })
+    return response.json()
+  },
+
+  async startFullSync(): Promise<FullSyncStarted> {
+    const response = await apiFetch('/api/players/full-sync', { method: 'POST' })
+    return response.json()
+  },
+
+  async getFullSyncStatus(runId: number): Promise<FullSyncStatus> {
+    const response = await apiFetch(`/api/players/full-sync/status/${runId}`)
+    return response.json()
+  },
+
+  async getLastSync(): Promise<LastSync> {
+    const response = await apiFetch('/api/players/last-sync')
+    return response.json()
+  },
+
+  // Excluded Friends
+  async getExcludedFriends(playerName: string): Promise<ExcludedFriend[]> {
+    const response = await apiFetch(
+      `/api/players/${encodeURIComponent(playerName)}/excluded-friends`
+    )
+    return response.json()
+  },
+
+  async addExcludedFriend(
+    playerName: string,
+    body: { riot_id: string; region?: string }
+  ): Promise<ExcludedFriend> {
+    const response = await apiFetch(
+      `/api/players/${encodeURIComponent(playerName)}/excluded-friends`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ region: 'euw', ...body }),
+      }
+    )
+    return response.json()
+  },
+
+  async removeExcludedFriend(playerName: string, friendId: number): Promise<void> {
+    await apiFetch(
+      `/api/players/${encodeURIComponent(playerName)}/excluded-friends/${friendId}`,
+      { method: 'DELETE' }
+    )
+  },
 }
 
 export { API_URL }

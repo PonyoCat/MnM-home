@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { formatDate } from '@/lib/utils'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import { Button } from './ui/button'
-import { ErrorState, LoadingState } from './ui/error-state'
+import { LoadingState } from './ui/error-state'
 import { api } from '@/lib/api'
 import { Check, X, ChevronDown, ChevronRight } from 'lucide-react'
 
@@ -35,13 +35,17 @@ function parseLocalIsoDate(value: string): Date {
 
 function getFallbackCurrentWeekStart(): string {
   const now = new Date()
-  const referenceDate = new Date(now)
-  // Reset happens at end-of-Thursday, so Thursday still belongs to outgoing week.
-  // Use yesterday as the reference date to emulate a 23:59 reset with date-only math.
-  referenceDate.setDate(referenceDate.getDate() - 1)
-  const dayOfWeek = referenceDate.getDay()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // Week resets Thursday at 16:00. If it's Thursday and past 16:00, new week starts today.
+  const isThursday = today.getDay() === 4
+  const pastResetHour = now.getHours() >= 16
+  const referenceDate = new Date(today)
+  if (!(isThursday && pastResetHour)) {
+    referenceDate.setDate(today.getDate() - 1)
+  }
+  const refDow = referenceDate.getDay()
   const thursday = new Date(referenceDate)
-  const daysBack = (dayOfWeek - 4 + 7) % 7
+  const daysBack = (refDow - 4 + 7) % 7
   thursday.setDate(referenceDate.getDate() - daysBack)
   return toLocalIsoDate(thursday)
 }
@@ -54,6 +58,7 @@ function isCurrentWeek(selectedWeek: string | null, currentWeekStart: string | n
 export function AccountabilityCheck() {
   const [accountabilityData, setAccountabilityData] = useState<PlayerAccountability[]>([])
   const [loading, setLoading] = useState(true)
+  const [dataLoading, setDataLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null)
   const [selectedWeek, setSelectedWeek] = useState<string | null>(null)
@@ -64,33 +69,29 @@ export function AccountabilityCheck() {
   })
 
   useEffect(() => {
-    initializeWeekConfig()
+    initializeData()
   }, [])
 
-  useEffect(() => {
-    if (selectedWeek) {
-      loadAccountability(selectedWeek)
-    }
-  }, [selectedWeek])
-
-  async function initializeWeekConfig() {
+  async function initializeData() {
     const fallbackWeekStart = getFallbackCurrentWeekStart()
     let resolvedWeekStart = fallbackWeekStart
-
     try {
       const currentWeekConfig = await api.getCurrentWeekConfig()
       resolvedWeekStart = currentWeekConfig.week_start_date || fallbackWeekStart
-    } catch (error) {
-      console.error('Error loading week config, using fallback:', error)
+    } catch (err) {
+      console.error('Error loading week config, using fallback:', err)
+    } finally {
+      setCurrentWeekStart(resolvedWeekStart)
+      setSelectedWeek(resolvedWeekStart)
+      setLoading(false)
     }
-
-    setCurrentWeekStart(resolvedWeekStart)
-    setSelectedWeek(resolvedWeekStart)
+    // Load accountability data in the background after the card is visible
+    void loadAccountabilityData(resolvedWeekStart)
   }
 
-  async function loadAccountability(targetWeekStart: string) {
+  async function loadAccountabilityData(targetWeekStart: string) {
     try {
-      setLoading(true)
+      setDataLoading(true)
       setError(null)
       const data = await api.getAccountabilityCheck(targetWeekStart)
       setAccountabilityData(data)
@@ -98,8 +99,12 @@ export function AccountabilityCheck() {
       console.error('Error loading accountability check:', error)
       setError(error as Error)
     } finally {
-      setLoading(false)
+      setDataLoading(false)
     }
+  }
+
+  async function loadAccountability(targetWeekStart: string) {
+    return loadAccountabilityData(targetWeekStart)
   }
 
   async function navigateWeek(direction: 'prev' | 'next') {
@@ -124,10 +129,13 @@ export function AccountabilityCheck() {
       }
       if (newWeekStart) {
         setSelectedWeek(newWeekStart)
+        await loadAccountability(newWeekStart)
       }
     } catch {
       // Fallback: plain 7-day offset
-      setSelectedWeek(toLocalIsoDate(targetDate))
+      const fallback = toLocalIsoDate(targetDate)
+      setSelectedWeek(fallback)
+      await loadAccountability(fallback)
     }
   }
 
@@ -141,10 +149,6 @@ export function AccountabilityCheck() {
 
   if (loading || !selectedWeek) {
     return <LoadingState componentName="accountability check" />
-  }
-
-  if (error) {
-    return <ErrorState error={error} onRetry={() => loadAccountability(selectedWeek)} />
   }
 
   return (
@@ -165,7 +169,7 @@ export function AccountabilityCheck() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setSelectedWeek(currentWeekStart)}
+                onClick={() => { setSelectedWeek(currentWeekStart); if (currentWeekStart) loadAccountability(currentWeekStart) }}
                 disabled={isCurrentWeek(selectedWeek, currentWeekStart)}
               >
                 Current Week
@@ -183,8 +187,16 @@ export function AccountabilityCheck() {
         </div>
       </CardHeader>
       <CardContent className="space-y-2 p-4">
+        {error && (
+          <div className="text-sm text-destructive pb-2">
+            Failed to load accountability data.{' '}
+            <button className="underline" onClick={() => loadAccountability(selectedWeek)}>Retry</button>
+          </div>
+        )}
         <div className="space-y-2">
-          {accountabilityData.map((player) => (
+          {dataLoading ? (
+            <div className="text-sm text-muted-foreground py-6 text-center">Loading...</div>
+          ) : accountabilityData.map((player) => (
             <div key={player.player_name} className="space-y-2">
               {/* Player summary - clickable to expand */}
               <div
@@ -260,8 +272,7 @@ export function AccountabilityCheck() {
               )}
             </div>
           ))}
-
-          {accountabilityData.length === 0 && (
+          {!dataLoading && accountabilityData.length === 0 && (
             <div className="text-center text-muted-foreground py-8">
               No data available
             </div>

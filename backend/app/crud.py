@@ -1,9 +1,23 @@
-from sqlalchemy import or_, select
+import asyncio
+import logging
+import os
+from datetime import date, datetime, timedelta, timezone
+from typing import List, Optional, Set
+
+import httpx
+from sqlalchemy import desc, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from . import models, schemas
-from typing import List, Optional
-from datetime import date, datetime, timedelta
+from .database import AsyncSessionLocal
+from .services import match_eligibility
+from .services.riot_api import RiotAPIClient, RiotMatchData
+
+logger = logging.getLogger(__name__)
+
+# Hour (local time) at which the week resets on the configured weekday.
+WEEK_RESET_HOUR = 16
 
 
 def _get_week_start(target_date: Optional[date] = None) -> date:
@@ -17,15 +31,34 @@ def _get_week_start_for_weekday(
 ) -> date:
     """Return active week label for the configured reset weekday.
 
-    Reset happens at the end of the configured weekday (23:59), not at 00:00.
-    With date-level resolution, we model this by resolving against (target_date - 1 day).
-    Example with Thursday=3:
-    - Thursday maps to previous Thursday (still outgoing week)
-    - Friday maps to current Thursday (new week started after Thursday 23:59)
+    Reset happens at WEEK_RESET_HOUR (16:00) on the configured weekday.
+
+    When target_date is None (real-time lookup), time-of-day is considered:
+    - If today IS the reset weekday and the clock has passed WEEK_RESET_HOUR,
+      today is the start of the new week.
+    - Otherwise today still belongs to the outgoing week.
+
+    When target_date is explicitly provided (historical/date-only query), the
+    old end-of-day convention is preserved: the reset weekday belongs to the
+    outgoing week (reference = target_date - 1 day).
+
+    Example with Thursday=3 and WEEK_RESET_HOUR=16:
+    - Thursday 09:00 -> previous Thursday (outgoing week)
+    - Thursday 17:00 -> this Thursday (new week)
+    - Friday (any time) -> this Thursday (new week)
     """
     if target_date is None:
-        target_date = datetime.now().date()
-    reference_date = target_date - timedelta(days=1)
+        now = datetime.now()
+        today = now.date()
+        if today.weekday() == week_start_weekday and now.hour >= WEEK_RESET_HOUR:
+            # Past the reset cutoff on the reset weekday: new week has started.
+            reference_date = today
+        else:
+            # Before the cutoff (or any other day): outgoing week still active.
+            reference_date = today - timedelta(days=1)
+    else:
+        # Historical date-only query: model end-of-day convention with subtraction.
+        reference_date = target_date - timedelta(days=1)
     days_back = (reference_date.weekday() - week_start_weekday + 7) % 7
     return reference_date - timedelta(days=days_back)
 
@@ -84,7 +117,7 @@ async def get_configured_week_start(
         rule = None
     weekday = rule.week_start_weekday if rule else 3
     week_start = _get_week_start_for_weekday(
-        target_date=resolved_target_date,
+        target_date=target_date,  # Preserve None for real-time time-aware lookup.
         week_start_weekday=weekday,
     )
     # If the computed week start predates this rule's own effective_from_date, the
@@ -132,7 +165,7 @@ async def upsert_weekly_champion(
     db: AsyncSession, champion_data: schemas.WeeklyChampionCreate
 ) -> models.WeeklyChampion:
     """Create a new played=true weekly champion record"""
-    champion = models.WeeklyChampion(**champion_data.dict())
+    champion = models.WeeklyChampion(**champion_data.model_dump())
     db.add(champion)
 
     await db.commit()
@@ -316,13 +349,39 @@ async def update_session_review_archive(
 
     return archive
 
+async def _flag_match_user_excluded(
+    db: AsyncSession,
+    player_name: str,
+    riot_match_id: Optional[str],
+) -> None:
+    """If the row was synced, flag the corresponding match_history row user_excluded=True.
+
+    The flag is sticky -- subsequent re-syncs see it and skip re-creating the weekly_champions row.
+    """
+    if not riot_match_id:
+        return
+    result = await db.execute(
+        select(models.MatchHistory).where(
+            models.MatchHistory.player_name == player_name,
+            models.MatchHistory.riot_match_id == riot_match_id,
+        )
+    )
+    match = result.scalar_one_or_none()
+    if match is not None:
+        match.user_excluded = True
+
+
 async def delete_weekly_champion(
     db: AsyncSession,
     player_name: str,
     champion_name: str,
     week_start: date
 ) -> bool:
-    """Delete ALL instances of a champion for a player in a specific week"""
+    """Delete ALL instances of a champion for a player in a specific week.
+
+    Synced rows (riot_match_id IS NOT NULL) also flip match_history.user_excluded=True
+    so a re-sync does not resurrect them.
+    """
     result = await db.execute(
         select(models.WeeklyChampion).where(
             models.WeeklyChampion.player_name == player_name,
@@ -333,6 +392,7 @@ async def delete_weekly_champion(
     champions = list(result.scalars().all())
 
     for champ in champions:
+        await _flag_match_user_excluded(db, champ.player_name, champ.riot_match_id)
         await db.delete(champ)
 
     await db.commit()
@@ -345,7 +405,11 @@ async def delete_one_weekly_champion_instance(
     week_start: date,
     played: bool = True
 ) -> bool:
-    """Delete ONE instance of a champion for a player in a specific week"""
+    """Delete ONE instance of a champion for a player in a specific week.
+
+    If the deleted row was synced (riot_match_id IS NOT NULL), also flip
+    match_history.user_excluded=True so re-syncs do not resurrect it.
+    """
     result = await db.execute(
         select(models.WeeklyChampion).where(
             models.WeeklyChampion.player_name == player_name,
@@ -357,6 +421,7 @@ async def delete_one_weekly_champion_instance(
     champion = result.scalars().first()
 
     if champion:
+        await _flag_match_user_excluded(db, champion.player_name, champion.riot_match_id)
         await db.delete(champion)
         await db.commit()
         return True
@@ -581,6 +646,7 @@ async def get_accountability_check(
     """
     Check if each player has played at least 1 game on all their champions for a given week.
     Returns accountability status for all 5 players.
+    Uses two bulk queries instead of per-player/per-champion queries to avoid N+1 overhead.
     """
     # Calculate target week start using configured week-boundary rules if not provided
     target_week_start = week_start or await get_configured_week_start(db)
@@ -588,24 +654,46 @@ async def get_accountability_check(
     # IMPORTANT: Always return all 5 players
     PLAYERS = ['Alex', 'Hans', 'Elias', 'Mikkel', 'Sinus']
 
+    # Bulk query 1: all active champion pool entries for the target week
+    pools_result = await db.execute(
+        select(models.ChampionPool).where(
+            models.ChampionPool.disabled.is_(False),
+            models.ChampionPool.effective_from_week <= target_week_start,
+            or_(
+                models.ChampionPool.effective_to_week.is_(None),
+                models.ChampionPool.effective_to_week >= target_week_start,
+            ),
+        )
+    )
+    all_pool_entries = pools_result.scalars().all()
+
+    # Build lookup: {player_name: [champion_name, ...]}
+    pool_by_player: dict[str, list[str]] = {p: [] for p in PLAYERS}
+    for entry in all_pool_entries:
+        if entry.player_name in pool_by_player:
+            pool_by_player[entry.player_name].append(entry.champion_name)
+
+    # Bulk query 2: all played weekly_champions rows for the target week
+    weekly_result = await db.execute(
+        select(models.WeeklyChampion).where(
+            models.WeeklyChampion.week_start_date == target_week_start,
+            models.WeeklyChampion.played.is_(True),
+        )
+    )
+    all_weekly = weekly_result.scalars().all()
+
+    # Build lookup: {(player_name, champion_name): game_count}
+    played_counts: dict[tuple[str, str], int] = {}
+    for row in all_weekly:
+        key = (row.player_name, row.champion_name)
+        played_counts[key] = played_counts.get(key, 0) + 1
+
+    # Assemble results in Python — no more per-champion DB round-trips
     accountability_data = []
 
     for player in PLAYERS:
-        # Get all active (non-disabled) champions in this player's pool
-        champions_result = await db.execute(
-            select(models.ChampionPool).where(
-                models.ChampionPool.player_name == player,
-                models.ChampionPool.disabled.is_(False),
-                models.ChampionPool.effective_from_week <= target_week_start,
-                or_(
-                    models.ChampionPool.effective_to_week.is_(None),
-                    models.ChampionPool.effective_to_week >= target_week_start,
-                ),
-            )
-        )
-        champions = list(champions_result.scalars().all())
+        champions = pool_by_player[player]
 
-        # If no champion pool entries, show 0/0
         if not champions:
             accountability_data.append({
                 "player_name": player,
@@ -613,40 +701,26 @@ async def get_accountability_check(
                 "missing_champions": [],
                 "total_champions": 0,
                 "champions_played": 0,
-                "champion_details": []  # New field for detailed status
+                "champion_details": [],
             })
             continue
 
-        # Check each champion for weekly games
         missing_champions = []
         champion_details = []
 
-        for champ in champions:
-            # CORRECT: Check weekly_champions table for current week
-            conditions = [
-                models.WeeklyChampion.player_name == player,
-                models.WeeklyChampion.champion_name == champ.champion_name,
-                models.WeeklyChampion.week_start_date == target_week_start,
-                models.WeeklyChampion.played.is_(True),  # Only count played games
-            ]
-
-            weekly_result = await db.execute(select(models.WeeklyChampion).where(*conditions))
-            weekly_games = list(weekly_result.scalars().all())
-
-            # Has played if at least 1 game this week
-            has_played = len(weekly_games) > 0
+        for champion_name in champions:
+            games_played = played_counts.get((player, champion_name), 0)
+            has_played = games_played > 0
 
             if not has_played:
-                missing_champions.append(champ.champion_name)
+                missing_champions.append(champion_name)
 
-            # Add detailed status for UI expansion
             champion_details.append({
-                "champion_name": champ.champion_name,
+                "champion_name": champion_name,
                 "has_played": has_played,
-                "games_played": len(weekly_games)
+                "games_played": games_played,
             })
 
-        # Player is accountable if no missing champions
         all_champions_played = len(missing_champions) == 0
 
         accountability_data.append({
@@ -655,7 +729,7 @@ async def get_accountability_check(
             "missing_champions": missing_champions,
             "total_champions": len(champions),
             "champions_played": len(champions) - len(missing_champions),
-            "champion_details": champion_details  # New field
+            "champion_details": champion_details,
         })
 
     return accountability_data
@@ -1003,3 +1077,873 @@ async def update_clash_dates(
     await db.commit()
     await db.refresh(clash_dates)
     return clash_dates
+
+# --- Player CRUD -------------------------------------------------------------
+
+
+async def get_players(db: AsyncSession) -> List[models.Player]:
+    """Return all roster players ordered by id (insertion order)."""
+    result = await db.execute(select(models.Player).order_by(models.Player.id))
+    return list(result.scalars().all())
+
+
+async def get_player_names(db: AsyncSession) -> List[str]:
+    """Return list of roster player names (legacy helper)."""
+    result = await db.execute(
+        select(models.Player.player_name).order_by(models.Player.id)
+    )
+    return list(result.scalars().all())
+
+
+async def get_player_by_name(
+    db: AsyncSession, player_name: str
+) -> Optional[models.Player]:
+    """Return the Player row whose player_name matches (case-sensitive)."""
+    result = await db.execute(
+        select(models.Player).where(models.Player.player_name == player_name)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_player(
+    db: AsyncSession,
+    player_name: str,
+    update_data: schemas.PlayerUpdate,
+) -> Optional[models.Player]:
+    """Update riot_id/region for a player. Clears cached PUUID if riot_id changes."""
+    player = await get_player_by_name(db, player_name)
+    if not player:
+        return None
+
+    if update_data.riot_id is not None and update_data.riot_id != player.riot_id:
+        player.riot_id = update_data.riot_id or None
+        # Clear cached PUUID -- it's tied to the previous Riot ID account.
+        player.puuid = None
+    if update_data.region is not None:
+        player.region = update_data.region
+
+    await db.commit()
+    await db.refresh(player)
+    return player
+
+
+# --- Match History CRUD ------------------------------------------------------
+
+
+async def get_match_history(
+    db: AsyncSession,
+    player_name: str,
+    week_start: Optional[date] = None,
+) -> List[models.MatchHistory]:
+    """Return match history rows for a player, optionally filtered to a single week."""
+    query = select(models.MatchHistory).where(
+        models.MatchHistory.player_name == player_name
+    )
+    if week_start is not None:
+        query = query.where(models.MatchHistory.week_start_date == week_start)
+    query = query.order_by(models.MatchHistory.game_start_time.desc())
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def exclude_match(
+    db: AsyncSession,
+    match_id: int,
+    player_name: str,
+) -> bool:
+    """Mark a match as user-excluded and remove any linked weekly_champions entry.
+
+    Sets user_excluded=True so re-syncs do not resurrect it, then deletes the
+    associated weekly_champions row (if one exists) so it no longer counts toward
+    accountability.
+    """
+    result = await db.execute(
+        select(models.MatchHistory).where(
+            models.MatchHistory.id == match_id,
+            models.MatchHistory.player_name == player_name,
+        )
+    )
+    match = result.scalar_one_or_none()
+    if match is None:
+        return False
+
+    match.user_excluded = True
+
+    if match.riot_match_id:
+        wc_result = await db.execute(
+            select(models.WeeklyChampion).where(
+                models.WeeklyChampion.player_name == player_name,
+                models.WeeklyChampion.riot_match_id == match.riot_match_id,
+            )
+        )
+        wc = wc_result.scalar_one_or_none()
+        if wc is not None:
+            await db.delete(wc)
+
+    await db.commit()
+    return True
+
+
+async def get_match_history_for_week(
+    db: AsyncSession,
+    player_name: str,
+    week_start: date,
+) -> List[models.MatchHistory]:
+    """Return all match_history rows for a player in a given week."""
+    return await get_match_history(db, player_name=player_name, week_start=week_start)
+
+
+async def get_existing_match_ids(
+    db: AsyncSession,
+    player_name: str,
+    week_start: date,
+) -> Set[str]:
+    """Return the set of riot_match_ids already stored for this player+week."""
+    result = await db.execute(
+        select(models.MatchHistory.riot_match_id).where(
+            models.MatchHistory.player_name == player_name,
+            models.MatchHistory.week_start_date == week_start,
+        )
+    )
+    return set(result.scalars().all())
+
+
+async def weekly_champions_row_exists(
+    db: AsyncSession,
+    player_name: str,
+    riot_match_id: str,
+) -> bool:
+    """True if a weekly_champions row already references this riot_match_id for the player."""
+    result = await db.execute(
+        select(models.WeeklyChampion.id).where(
+            models.WeeklyChampion.player_name == player_name,
+            models.WeeklyChampion.riot_match_id == riot_match_id,
+        )
+    )
+    return result.first() is not None
+
+
+# --- Excluded Friends CRUD ---------------------------------------------------
+
+
+async def get_excluded_friends(
+    db: AsyncSession,
+    player_name: str,
+) -> List[models.ExcludedFriend]:
+    """Return the excluded-friends list owned by the given roster player."""
+    result = await db.execute(
+        select(models.ExcludedFriend)
+        .where(models.ExcludedFriend.player_name == player_name)
+        .order_by(models.ExcludedFriend.id)
+    )
+    return list(result.scalars().all())
+
+
+async def add_excluded_friend(
+    db: AsyncSession,
+    player_name: str,
+    riot_id: str,
+    region: str = "euw",
+) -> models.ExcludedFriend:
+    """Add a friend whose presence on the player's team excludes the match.
+
+    PUUID resolution is intentionally lazy -- a mistyped Riot ID should not fail
+    the form submission, just sit unresolved until the next sync.
+    """
+    friend = models.ExcludedFriend(
+        player_name=player_name,
+        riot_id=riot_id.strip(),
+        region=region,
+    )
+    db.add(friend)
+    await db.commit()
+    await db.refresh(friend)
+    return friend
+
+
+async def remove_excluded_friend(
+    db: AsyncSession,
+    player_name: str,
+    friend_id: int,
+) -> bool:
+    """Remove an excluded-friend row (scoped to its owning player)."""
+    result = await db.execute(
+        select(models.ExcludedFriend).where(
+            models.ExcludedFriend.id == friend_id,
+            models.ExcludedFriend.player_name == player_name,
+        )
+    )
+    friend = result.scalar_one_or_none()
+    if not friend:
+        return False
+    await db.delete(friend)
+    await db.commit()
+    return True
+
+
+# --- Sync Run CRUD -----------------------------------------------------------
+
+
+async def get_last_successful_sync(db: AsyncSession) -> Optional[datetime]:
+    """Return finished_at of the most recent successful sync_runs row (or None)."""
+    result = await db.execute(
+        select(models.SyncRun.finished_at)
+        .where(models.SyncRun.status == "success")
+        .where(models.SyncRun.finished_at.is_not(None))
+        .order_by(desc(models.SyncRun.finished_at))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+# --- Sync Flow ---------------------------------------------------------------
+
+
+async def exclude_synced_weekly_champion(
+    db: AsyncSession, weekly_id: int
+) -> bool:
+    """Delete a weekly_champions row and (if synced) flag the match as user_excluded.
+
+    The sticky flag means a subsequent re-sync will not resurrect the row.
+    """
+    row = await db.get(models.WeeklyChampion, weekly_id)
+    if row is None:
+        return False
+    riot_match_id = row.riot_match_id
+    player_name = row.player_name
+    await db.delete(row)
+
+    if riot_match_id:
+        result = await db.execute(
+            select(models.MatchHistory).where(
+                models.MatchHistory.player_name == player_name,
+                models.MatchHistory.riot_match_id == riot_match_id,
+            )
+        )
+        match = result.scalar_one_or_none()
+        if match is not None:
+            match.user_excluded = True
+
+    await db.commit()
+    return True
+
+
+async def sync_player_games(
+    db: AsyncSession,
+    player_name: str,
+    week_start: Optional[date] = None,
+    riot_client: Optional[RiotAPIClient] = None,
+) -> schemas.SyncResult:
+    """Fetch games from Riot API, persist match_history, create weekly_champions for eligible games.
+
+    Eligibility (queue + premade exclusion + user override) is delegated to
+    services.match_eligibility -- this function only orchestrates fetch+persist.
+    """
+    player = await get_player_by_name(db, player_name)
+    if not player:
+        raise ValueError(f"Player {player_name} not found")
+    if not player.riot_id:
+        raise ValueError(f"Player {player_name} has no riot_id set")
+
+    target_week_start = week_start or await get_configured_week_start(db)
+
+    if riot_client is None:
+        api_key = os.getenv("RIOT_API_KEY")
+        if not api_key:
+            raise ValueError("RIOT_API_KEY is not configured on the server")
+        riot_client = RiotAPIClient(api_key=api_key)
+
+    # 1. Resolve & cache the roster player's PUUID.
+    if not player.puuid:
+        if "#" not in player.riot_id:
+            raise ValueError(
+                f"Player {player_name} riot_id must be in 'Name#Tag' format"
+            )
+        game_name, tag_line = player.riot_id.split("#", 1)
+        player.puuid = await riot_client.get_puuid(game_name.strip(), tag_line.strip())
+        await db.commit()
+    puuid = player.puuid
+
+    # 2. Resolve & cache excluded-friend PUUIDs (lazy, one Account-V1 call per friend, first time only).
+    excluded_friends = await get_excluded_friends(db, player_name)
+    for friend in excluded_friends:
+        if friend.puuid:
+            continue
+        if "#" not in friend.riot_id:
+            continue
+        try:
+            fg, ft = friend.riot_id.split("#", 1)
+            friend.puuid = await riot_client.get_puuid(fg.strip(), ft.strip())
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Could not resolve excluded friend %s for %s: %s",
+                friend.riot_id, player_name, exc,
+            )
+        except Exception as exc:  # noqa: BLE001 -- never fail sync over one bad friend
+            logger.warning(
+                "Unexpected error resolving excluded friend %s for %s: %s",
+                friend.riot_id, player_name, exc,
+            )
+    await db.commit()
+    excluded_puuids = frozenset(f.puuid for f in excluded_friends if f.puuid)
+
+    # 3. Load known match IDs from DB so we can skip fetching their details.
+    known_ids = await get_existing_match_ids(db, player_name, target_week_start)
+
+    # 4. Fetch only new games from Riot API (detail calls skipped for known IDs).
+    games: List[RiotMatchData] = await riot_client.fetch_player_games(
+        puuid, since_date=target_week_start, known_match_ids=known_ids
+    )
+
+    # 5. Load full existing match_history for dedup + user_excluded re-evaluation.
+    existing_matches = await get_match_history_for_week(db, player_name, target_week_start)
+    existing_by_id = {m.riot_match_id: m for m in existing_matches}
+
+    games_synced = 0
+    games_excluded = 0
+    games_already_present = 0
+
+    for game in games:
+        existing = existing_by_id.get(game.riot_match_id)
+
+        if existing is None:
+            existing = models.MatchHistory(
+                player_name=player_name,
+                riot_match_id=game.riot_match_id,
+                champion_name=game.champion_name,
+                won=game.won,
+                kills=game.kills,
+                deaths=game.deaths,
+                assists=game.assists,
+                cs=game.cs,
+                vision_score=game.vision_score,
+                gold_earned=game.gold_earned,
+                damage_to_champions=game.damage_to_champions,
+                game_duration_seconds=game.game_duration_seconds,
+                team_position=game.team_position,
+                game_start_time=game.game_start_time,
+                week_start_date=target_week_start,
+                queue_id=game.queue_id,
+                team_puuids=list(game.team_puuids),
+                user_excluded=False,
+            )
+            db.add(existing)
+            existing_by_id[game.riot_match_id] = existing
+
+        verdict = match_eligibility.evaluate_match(
+            queue_id=game.queue_id,
+            team_puuids=game.team_puuids,
+            excluded_puuids=excluded_puuids,
+            user_excluded=bool(existing.user_excluded),
+        )
+
+        if not verdict.counts:
+            games_excluded += 1
+            continue
+
+        # Flush pending inserts so the existence check below sees them.
+        await db.flush()
+
+        if await weekly_champions_row_exists(
+            db, player_name=player_name, riot_match_id=game.riot_match_id
+        ):
+            games_already_present += 1
+            continue
+
+        db.add(
+            models.WeeklyChampion(
+                player_name=player_name,
+                champion_name=game.champion_name,
+                played=True,
+                week_start_date=target_week_start,
+                won=game.won,
+                riot_match_id=game.riot_match_id,
+            )
+        )
+        games_synced += 1
+
+    await db.commit()
+
+    return schemas.SyncResult(
+        player_name=player_name,
+        games_synced=games_synced,
+        games_excluded=games_excluded,
+        games_already_present=games_already_present,
+        total_games_found=len(games),
+        message=(
+            f"Synced {games_synced} new games "
+            f"({games_excluded} excluded by eligibility, "
+            f"{games_already_present} already present, "
+            f"{len(games)} total found this week)"
+        ),
+    )
+
+
+async def sync_all_players(
+    db: AsyncSession,
+    trigger: str = "manual",
+    week_start: Optional[date] = None,
+) -> schemas.SyncAllResult:
+    """Run sync_player_games for every roster player with a riot_id set.
+
+    Persists a sync_runs row for the run. Failures of individual player syncs
+    are isolated -- the rest of the players still sync, and the failed player
+    is recorded in failed_players.
+    """
+    started_at = datetime.now(timezone.utc)
+    run = models.SyncRun(
+        started_at=started_at,
+        trigger=trigger,
+        status="running",
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+
+    players = await get_players(db)
+    eligible_players = [p for p in players if p.riot_id]
+
+    api_key = os.getenv("RIOT_API_KEY")
+    riot_client = RiotAPIClient(api_key=api_key) if api_key else None
+
+    per_player: List[schemas.SyncResult] = []
+    failed_players: List[str] = []
+
+    async def _sync_one(player_name: str) -> schemas.SyncResult:
+        """Sync a single player using a dedicated DB session."""
+        async with AsyncSessionLocal() as player_db:
+            return await sync_player_games(
+                player_db,
+                player_name=player_name,
+                week_start=week_start,
+                riot_client=riot_client,
+            )
+
+    raw_results = await asyncio.gather(
+        *[_sync_one(p.player_name) for p in eligible_players],
+        return_exceptions=True,
+    )
+
+    for player, result in zip(eligible_players, raw_results):
+        if isinstance(result, Exception):
+            logger.exception("Sync failed for %s: %s", player.player_name, result)
+            failed_players.append(player.player_name)
+            per_player.append(
+                schemas.SyncResult(
+                    player_name=player.player_name,
+                    games_synced=0,
+                    games_excluded=0,
+                    games_already_present=0,
+                    total_games_found=0,
+                    message=f"Failed: {result}",
+                )
+            )
+        else:
+            per_player.append(result)
+
+    finished_at = datetime.now(timezone.utc)
+    total_games_synced = sum(r.games_synced for r in per_player)
+    total_games_excluded = sum(r.games_excluded for r in per_player)
+    total_games_already_present = sum(r.games_already_present for r in per_player)
+    total_games_found = sum(r.total_games_found for r in per_player)
+
+    if failed_players and len(failed_players) == len(eligible_players):
+        status = "failed"
+    elif failed_players:
+        status = "partial"
+    else:
+        status = "success"
+
+    summary = schemas.SyncAllResult(
+        trigger=trigger,
+        started_at=started_at,
+        finished_at=finished_at,
+        per_player=per_player,
+        total_games_synced=total_games_synced,
+        total_games_excluded=total_games_excluded,
+        total_games_already_present=total_games_already_present,
+        total_games_found=total_games_found,
+        failed_players=failed_players,
+        message=(
+            f"{trigger} sync: {total_games_synced} games synced across "
+            f"{len(eligible_players) - len(failed_players)} players"
+            + (f", {len(failed_players)} failed" if failed_players else "")
+        ),
+    )
+
+    run.finished_at = finished_at
+    run.status = status
+    run.summary = summary.model_dump(mode="json")
+    await db.commit()
+
+    return summary
+
+
+async def full_sync_player_games(
+    db: AsyncSession,
+    player_name: str,
+    riot_client: Optional[RiotAPIClient] = None,
+) -> schemas.SyncResult:
+    """Fetch the full ranked match history for a player with no date limit.
+
+    Paginates through all available match IDs, skips any already stored in the
+    database, then fetches details with rate limiting between calls to respect
+    the 100 requests / 2 minute Riot API rate limit.
+    """
+    player = await get_player_by_name(db, player_name)
+    if not player:
+        raise ValueError(f"Player {player_name} not found")
+    if not player.riot_id:
+        raise ValueError(f"Player {player_name} has no riot_id set")
+
+    if riot_client is None:
+        api_key = os.getenv("RIOT_API_KEY")
+        if not api_key:
+            raise ValueError("RIOT_API_KEY is not configured on the server")
+        riot_client = RiotAPIClient(api_key=api_key)
+
+    # 1. Resolve & cache PUUID.
+    if not player.puuid:
+        if "#" not in player.riot_id:
+            raise ValueError(
+                f"Player {player_name} riot_id must be in 'Name#Tag' format"
+            )
+        game_name, tag_line = player.riot_id.split("#", 1)
+        player.puuid = await riot_client.get_puuid(game_name.strip(), tag_line.strip())
+        await db.commit()
+    puuid = player.puuid
+
+    # 2. Resolve & cache excluded-friend PUUIDs.
+    excluded_friends = await get_excluded_friends(db, player_name)
+    for friend in excluded_friends:
+        if friend.puuid or "#" not in friend.riot_id:
+            continue
+        try:
+            fg, ft = friend.riot_id.split("#", 1)
+            friend.puuid = await riot_client.get_puuid(fg.strip(), ft.strip())
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Could not resolve excluded friend %s for %s: %s",
+                friend.riot_id, player_name, exc,
+            )
+    await db.commit()
+    excluded_puuids = frozenset(f.puuid for f in excluded_friends if f.puuid)
+
+    # 3. Load ALL known match IDs from DB (across every week, not just current).
+    all_known_result = await db.execute(
+        select(models.MatchHistory.riot_match_id).where(
+            models.MatchHistory.player_name == player_name
+        )
+    )
+    known_ids: Set[str] = set(all_known_result.scalars().all())
+
+    # 4. Fetch all new games from Riot API with rate limiting.
+    games: List[RiotMatchData] = await riot_client.fetch_all_player_games(
+        puuid, known_match_ids=known_ids
+    )
+
+    if not games:
+        return schemas.SyncResult(
+            player_name=player_name,
+            games_synced=0,
+            games_excluded=0,
+            games_already_present=0,
+            total_games_found=len(known_ids),
+            message=f"No new games found (all {len(known_ids)} already synced)",
+        )
+
+    # 5. Pre-compute week_start for each unique game date (batch to avoid N+1 queries).
+    unique_dates = {g.game_start_time.date() for g in games}
+    week_start_cache: dict[date, date] = {}
+    for d in unique_dates:
+        week_start_cache[d] = await get_configured_week_start(db, target_date=d)
+
+    # 6. Load existing match_history for dedup.
+    existing_result = await db.execute(
+        select(models.MatchHistory).where(
+            models.MatchHistory.player_name == player_name
+        )
+    )
+    existing_by_id = {m.riot_match_id: m for m in existing_result.scalars().all()}
+
+    games_synced = 0
+    games_excluded = 0
+    games_already_present = 0
+
+    for game in games:
+        game_week_start = week_start_cache[game.game_start_time.date()]
+        existing = existing_by_id.get(game.riot_match_id)
+
+        if existing is None:
+            existing = models.MatchHistory(
+                player_name=player_name,
+                riot_match_id=game.riot_match_id,
+                champion_name=game.champion_name,
+                won=game.won,
+                kills=game.kills,
+                deaths=game.deaths,
+                assists=game.assists,
+                cs=game.cs,
+                vision_score=game.vision_score,
+                gold_earned=game.gold_earned,
+                damage_to_champions=game.damage_to_champions,
+                game_duration_seconds=game.game_duration_seconds,
+                team_position=game.team_position,
+                game_start_time=game.game_start_time,
+                week_start_date=game_week_start,
+                queue_id=game.queue_id,
+                team_puuids=list(game.team_puuids),
+                user_excluded=False,
+            )
+            db.add(existing)
+            existing_by_id[game.riot_match_id] = existing
+
+        verdict = match_eligibility.evaluate_match(
+            queue_id=game.queue_id,
+            team_puuids=game.team_puuids,
+            excluded_puuids=excluded_puuids,
+            user_excluded=bool(existing.user_excluded),
+        )
+
+        if not verdict.counts:
+            games_excluded += 1
+            continue
+
+        await db.flush()
+
+        if await weekly_champions_row_exists(
+            db, player_name=player_name, riot_match_id=game.riot_match_id
+        ):
+            games_already_present += 1
+            continue
+
+        db.add(
+            models.WeeklyChampion(
+                player_name=player_name,
+                champion_name=game.champion_name,
+                played=True,
+                week_start_date=game_week_start,
+                won=game.won,
+                riot_match_id=game.riot_match_id,
+            )
+        )
+        games_synced += 1
+
+    await db.commit()
+
+    return schemas.SyncResult(
+        player_name=player_name,
+        games_synced=games_synced,
+        games_excluded=games_excluded,
+        games_already_present=games_already_present,
+        total_games_found=len(games) + len(known_ids),
+        message=(
+            f"Full sync: {games_synced} new games synced "
+            f"({games_excluded} excluded, {games_already_present} already present, "
+            f"{len(games)} new from Riot API)"
+        ),
+    )
+
+
+async def full_sync_all_players(
+    db: AsyncSession,
+    trigger: str = "full_manual",
+    run_id: Optional[int] = None,
+) -> schemas.SyncAllResult:
+    """Run full_sync_player_games sequentially for every roster player with a riot_id.
+
+    Sequential execution (instead of asyncio.gather) is deliberate: the full
+    history fetch issues many detail calls per player and must respect the
+    100 requests / 2 minute Riot API rate limit across all players combined.
+
+    Writes incremental progress to sync_runs.progress after each player so that
+    the status polling endpoint can surface live updates.
+
+    If run_id is provided (pre-created by the background-task endpoint), reuses
+    that row instead of creating a new one.
+    """
+    started_at = datetime.now(timezone.utc)
+
+    if run_id is not None:
+        result = await db.execute(
+            select(models.SyncRun).where(models.SyncRun.id == run_id)
+        )
+        run = result.scalar_one()
+    else:
+        run = models.SyncRun(
+            started_at=started_at,
+            trigger=trigger,
+            status="running",
+        )
+        db.add(run)
+        await db.commit()
+        await db.refresh(run)
+
+    players = await get_players(db)
+    eligible_players = [p for p in players if p.riot_id]
+
+    api_key = os.getenv("RIOT_API_KEY")
+    riot_client = RiotAPIClient(api_key=api_key) if api_key else None
+
+    per_player: List[schemas.SyncResult] = []
+    failed_players: List[str] = []
+    games_synced_so_far = 0
+    games_found_so_far = 0
+    completed_players: List[str] = []
+
+    # On restart recovery: skip players already completed in a previous run.
+    existing_progress = run.progress or {}
+    completed_players = list(existing_progress.get("completed_players", []))
+    skipped = set(completed_players)
+
+    for idx, player in enumerate(eligible_players):
+        if player.player_name in skipped:
+            logger.info("Full sync: skipping already-completed player %s", player.player_name)
+            continue
+
+        # Write progress before starting this player so polling sees who's active.
+        run.progress = schemas.FullSyncProgress(
+            players_total=len(eligible_players),
+            players_done=len(completed_players),
+            current_player=player.player_name,
+            games_synced_so_far=games_synced_so_far,
+            games_found_so_far=games_found_so_far,
+            completed_players=completed_players,
+        ).model_dump()
+        await db.commit()
+
+        try:
+            async with AsyncSessionLocal() as player_db:
+                result = await full_sync_player_games(
+                    player_db,
+                    player_name=player.player_name,
+                    riot_client=riot_client,
+                )
+            per_player.append(result)
+            games_synced_so_far += result.games_synced
+            games_found_so_far += result.total_games_found
+            completed_players.append(player.player_name)
+        except Exception as exc:
+            logger.exception("Full sync failed for %s: %s", player.player_name, exc)
+            failed_players.append(player.player_name)
+            per_player.append(
+                schemas.SyncResult(
+                    player_name=player.player_name,
+                    games_synced=0,
+                    games_excluded=0,
+                    games_already_present=0,
+                    total_games_found=0,
+                    message=f"Failed: {exc}",
+                )
+            )
+
+    finished_at = datetime.now(timezone.utc)
+    total_games_synced = sum(r.games_synced for r in per_player)
+    total_games_excluded = sum(r.games_excluded for r in per_player)
+    total_games_already_present = sum(r.games_already_present for r in per_player)
+    total_games_found = sum(r.total_games_found for r in per_player)
+
+    if failed_players and len(failed_players) == len(eligible_players):
+        final_status = "failed"
+    elif failed_players:
+        final_status = "partial"
+    else:
+        final_status = "success"
+
+    summary = schemas.SyncAllResult(
+        trigger=trigger,
+        started_at=started_at,
+        finished_at=finished_at,
+        per_player=per_player,
+        total_games_synced=total_games_synced,
+        total_games_excluded=total_games_excluded,
+        total_games_already_present=total_games_already_present,
+        total_games_found=total_games_found,
+        failed_players=failed_players,
+        message=(
+            f"Full sync: {total_games_synced} games synced across "
+            f"{len(eligible_players) - len(failed_players)} players"
+            + (f", {len(failed_players)} failed" if failed_players else "")
+        ),
+    )
+
+    run.finished_at = finished_at
+    run.status = final_status
+    run.summary = summary.model_dump(mode="json")
+    run.progress = schemas.FullSyncProgress(
+        players_total=len(eligible_players),
+        players_done=len(eligible_players),
+        current_player=None,
+        games_synced_so_far=total_games_synced,
+        games_found_so_far=total_games_found,
+    ).model_dump()
+    await db.commit()
+
+    return summary
+
+
+async def get_full_sync_status(db: AsyncSession, run_id: int) -> Optional[schemas.FullSyncStatus]:
+    """Return the current status of a full sync run by its ID."""
+    result = await db.execute(
+        select(models.SyncRun).where(models.SyncRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return None
+
+    progress = None
+    if run.progress:
+        progress = schemas.FullSyncProgress(**run.progress)
+
+    result_data = None
+    if run.summary and run.status in ("success", "partial", "failed"):
+        result_data = schemas.SyncAllResult(**run.summary)
+
+    return schemas.FullSyncStatus(
+        run_id=run.id,
+        status=run.status,
+        progress=progress,
+        result=result_data,
+    )
+
+
+async def get_running_full_sync(db: AsyncSession) -> Optional[schemas.FullSyncStatus]:
+    """Return the FullSyncStatus of any currently running full_manual sync run, or None."""
+    result = await db.execute(
+        select(models.SyncRun).where(
+            models.SyncRun.trigger == "full_manual",
+            models.SyncRun.status == "running",
+        )
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return None
+    progress = schemas.FullSyncProgress(**run.progress) if run.progress else None
+    return schemas.FullSyncStatus(run_id=run.id, status=run.status, progress=progress)
+
+
+async def create_full_sync_run(db: AsyncSession) -> int:
+    """Create a new SyncRun row for a full sync and return its id."""
+    run = models.SyncRun(
+        started_at=datetime.now(timezone.utc),
+        trigger="full_manual",
+        status="running",
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run.id
+
+
+async def mark_full_sync_run_failed(db: AsyncSession, run_id: int, reason: str) -> None:
+    """Mark a SyncRun row as failed with a reason message."""
+    result = await db.execute(
+        select(models.SyncRun).where(models.SyncRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return
+    run.status = "failed"
+    run.finished_at = datetime.now(timezone.utc)
+    run.summary = {"message": reason}
+    await db.commit()
