@@ -2,16 +2,22 @@ from datetime import date
 from io import BytesIO
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import crud, database
+import time as _time
+
 from ..services.charting import (
+    CHART_CACHE_TTL_SECONDS,
     PLAYERS,
+    _chart_cache,
+    _ChartCacheEntry,
     build_chart_json_data,
     build_games_dataframe,
     get_data_date_bounds,
+    invalidate_chart_cache,
     render_bar_chart,
     render_line_chart,
     render_pie_chart,
@@ -106,8 +112,10 @@ async def get_pool_coverage(
 
 @router.get("/charts/date-bounds")
 async def get_chart_date_bounds(
+    response: Response,
     db: AsyncSession = Depends(database.get_db),
 ):
+    response.headers["Cache-Control"] = "max-age=120, stale-while-revalidate=30"
     try:
         earliest, latest = await get_data_date_bounds(db)
         return {
@@ -132,13 +140,23 @@ async def get_chart_json_data(
         parsed_player = _validate_player(player_name, required=parsed_mode == "player")
         parsed_start, parsed_end = _parse_date_range(start_date, end_date)
 
+        cache_key = (parsed_mode, parsed_player or "", str(parsed_start), str(parsed_end))
+        cached = _chart_cache.get(cache_key)
+        if cached and _time.monotonic() < cached.expires_at:
+            return cached.value
+
         df = await build_games_dataframe(
             db=db,
             start_date=parsed_start,
             end_date=parsed_end,
             player_name=parsed_player if parsed_mode == "player" else None,
         )
-        return build_chart_json_data(df, parsed_mode, parsed_player)
+        json_data = build_chart_json_data(df, parsed_mode, parsed_player)
+        _chart_cache[cache_key] = _ChartCacheEntry(
+            value=json_data,
+            expires_at=_time.monotonic() + CHART_CACHE_TTL_SECONDS,
+        )
+        return json_data
     except HTTPException:
         raise
     except Exception as exc:

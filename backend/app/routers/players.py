@@ -7,7 +7,7 @@ from datetime import date
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,8 +39,9 @@ def _http_error_for_riot(exc: httpx.HTTPStatusError) -> HTTPException:
 
 
 @router.get("/last-sync", response_model=schemas.LastSync)
-async def get_last_sync(db: AsyncSession = Depends(get_db)):
+async def get_last_sync(response: Response, db: AsyncSession = Depends(get_db)):
     """Return the timestamp of the most recent successful sync (or null)."""
+    response.headers["Cache-Control"] = "max-age=30, stale-while-revalidate=15"
     last = await crud.get_last_successful_sync(db)
     return schemas.LastSync(last_synced_at=last)
 
@@ -144,9 +145,66 @@ async def _run_full_sync_background(app: FastAPI, run_id: int) -> None:
 
 
 @router.get("/", response_model=List[schemas.Player])
-async def list_players(db: AsyncSession = Depends(get_db)):
+async def list_players(response: Response, db: AsyncSession = Depends(get_db)):
     """Return all roster players."""
+    response.headers["Cache-Control"] = "max-age=120, stale-while-revalidate=30"
     return await crud.get_players(db)
+
+
+# --- Global Excluded Friends (shared across all players) ---------------------
+
+
+@router.get(
+    "/excluded-friends",
+    response_model=List[schemas.ExcludedFriend],
+)
+async def list_excluded_friends_global(
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all excluded friends (global list, not scoped to a player)."""
+    return await crud.get_all_excluded_friends_global(db)
+
+
+@router.post(
+    "/excluded-friends",
+    response_model=schemas.ExcludedFriend,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_excluded_friend_global(
+    body: schemas.ExcludedFriendCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a global excluded friend (applies to all players' syncs)."""
+    if "#" not in body.riot_id:
+        raise HTTPException(
+            status_code=400,
+            detail="riot_id must be in 'Name#Tag' format",
+        )
+    try:
+        return await crud.add_excluded_friend_global(
+            db,
+            riot_id=body.riot_id,
+            region=body.region,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/excluded-friends/{friend_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_excluded_friend_global(
+    friend_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove an excluded friend by id (global scope)."""
+    removed = await crud.remove_excluded_friend_by_id(db, friend_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Excluded friend not found")
+    return None
 
 
 @router.get("/{player_name}", response_model=schemas.Player)
@@ -204,7 +262,8 @@ async def exclude_match(
     return None
 
 
-# --- Excluded Friends --------------------------------------------------------
+# --- Excluded Friends (per-player) -------------------------------------------
+
 
 
 @router.get(

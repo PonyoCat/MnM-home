@@ -167,6 +167,10 @@ export function DataPage() {
   const [lineExcludedChampions, setLineExcludedChampions] = useState<Set<string>>(new Set())
   const [lineByPlayer, setLineByPlayer] = useState(false)
 
+  // Champion pool filter
+  const [poolOnly, setPoolOnly] = useState(true)
+  const [allPools, setAllPools] = useState<Record<string, string[]>>({})
+
   // Load earliest date on mount
   useEffect(() => {
     let active = true
@@ -183,6 +187,28 @@ export function DataPage() {
     loadDateBounds()
     return () => { active = false }
   }, [today])
+
+  // Fetch champion pools on mount
+  useEffect(() => {
+    let active = true
+    async function loadPools() {
+      try {
+        const pools = await api.getChampionPools() as { player_name: string; champion_name: string; disabled: boolean }[]
+        if (!active) return
+        const grouped: Record<string, string[]> = {}
+        for (const entry of pools) {
+          if (entry.disabled) continue
+          if (!grouped[entry.player_name]) grouped[entry.player_name] = []
+          grouped[entry.player_name].push(entry.champion_name)
+        }
+        setAllPools(grouped)
+      } catch {
+        // fail silently
+      }
+    }
+    loadPools()
+    return () => { active = false }
+  }, [])
 
   // Reset line filter when switching modes
   useEffect(() => {
@@ -218,28 +244,69 @@ export function DataPage() {
 
   const chartAxisStyle = { fill: CHART_TEXT, fontSize: 11, fontFamily: 'inherit' }
 
+  const currentPoolSet = useMemo((): Set<string> | null => {
+    if (!poolOnly) return null
+    if (mode === 'player') return new Set(allPools[selectedPlayer] ?? [])
+    const all = new Set<string>()
+    Object.values(allPools).forEach(champs => champs.forEach(c => all.add(c)))
+    return all
+  }, [poolOnly, mode, selectedPlayer, allPools])
+
+  const filteredBarData = useMemo(() => {
+    if (!currentPoolSet) return chartData.bar_data
+    return chartData.bar_data.filter(row => currentPoolSet.has(row.champion as string))
+  }, [chartData.bar_data, currentPoolSet])
+
+  const filteredLineChampions = useMemo(() => {
+    if (!currentPoolSet) return chartData.line_champions
+    return chartData.line_champions.filter(c => currentPoolSet.has(c))
+  }, [chartData.line_champions, currentPoolSet])
+
+  const filteredPieData = useMemo(() => {
+    if (!currentPoolSet) return chartData.pie_data
+    return chartData.pie_data.filter(d => currentPoolSet.has(d.name))
+  }, [chartData.pie_data, currentPoolSet])
+
+  const filteredTotalGames = useMemo(() => {
+    if (!currentPoolSet) return chartData.total_games
+    if (mode === 'player') {
+      return filteredBarData.reduce((sum, row) => sum + ((row.games as number) || 0), 0)
+    }
+    return filteredBarData.reduce(
+      (sum, row) => sum + PLAYERS.reduce((s, p) => s + ((row[p] as number) || 0), 0), 0
+    )
+  }, [filteredBarData, currentPoolSet, chartData.total_games, mode])
+
+  const lineChampionColors = useMemo(() => {
+    const colorMap: Record<string, string> = {}
+    filteredLineChampions.forEach((champ, i) => {
+      colorMap[champ] = PIE_COLORS[i % PIE_COLORS.length]
+    })
+    return colorMap
+  }, [filteredLineChampions])
+
   // Grouped bar data (all mode)
   const groupedBarData = useMemo(() => {
-    if (mode !== 'all' || !barGrouped || chartData.bar_data.length === 0) return null
-    return buildGroupedBarData(chartData.bar_data, PLAYERS)
-  }, [chartData.bar_data, mode, barGrouped])
+    if (mode !== 'all' || !barGrouped || filteredBarData.length === 0) return null
+    return buildGroupedBarData(filteredBarData, PLAYERS)
+  }, [filteredBarData, mode, barGrouped])
 
   // Sorted bar data (all mode, sorted sub-mode)
   const barSortedN = Math.max(1, Math.min(999, parseInt(barSortedNInput) || 5))
   const sortedBarData = useMemo(() => {
-    return chartData.bar_data.slice(0, barSortedN)
-  }, [chartData.bar_data, barSortedN])
+    return filteredBarData.slice(0, barSortedN)
+  }, [filteredBarData, barSortedN])
 
   // Player bar data
   const playerBarData = useMemo(() => {
-    if (barPlayerTopN === undefined) return chartData.bar_data
-    return chartData.bar_data.slice(0, barPlayerTopN)
-  }, [chartData.bar_data, barPlayerTopN])
+    if (barPlayerTopN === undefined) return filteredBarData
+    return filteredBarData.slice(0, barPlayerTopN)
+  }, [filteredBarData, barPlayerTopN])
 
   // Champion-to-player ownership (who has most games on each champion)
   const championOwnership = useMemo(() => {
     const ownership: Record<string, string> = {}
-    for (const row of chartData.bar_data) {
+    for (const row of filteredBarData) {
       const champion = row.champion as string
       let bestPlayer = ''
       let bestGames = 0
@@ -253,24 +320,25 @@ export function DataPage() {
       if (bestPlayer) ownership[champion] = bestPlayer
     }
     return ownership
-  }, [chartData.bar_data])
+  }, [filteredBarData])
 
   // Champions grouped by owning player for the filter panel
   const championsByPlayer = useMemo(() => {
     const groups: Record<string, string[]> = {}
     for (const player of PLAYERS) groups[player] = []
-    for (const champ of chartData.line_champions) {
+    for (const champ of filteredLineChampions) {
       const owner = championOwnership[champ]
       if (owner && groups[owner]) groups[owner].push(champ)
     }
     return groups
-  }, [chartData.line_champions, championOwnership])
+  }, [filteredLineChampions, championOwnership])
 
   // Visible line champions after applying exclusion filter
   const visibleLineChampions = useMemo(() => {
-    if (mode === 'player') return chartData.line_champions.slice(0, 5)
-    return chartData.line_champions.filter(champ => !lineExcludedChampions.has(champ))
-  }, [chartData.line_champions, lineExcludedChampions, mode])
+    const base = filteredLineChampions.filter(champ => !lineExcludedChampions.has(champ))
+    if (mode === 'player' && !poolOnly) return base.slice(0, 5)
+    return base
+  }, [filteredLineChampions, lineExcludedChampions, mode, poolOnly])
 
   // Per-player weekly line data (all mode, lineByPlayer = true)
   const playerWeeklyLineData = useMemo(() => {
@@ -313,14 +381,13 @@ export function DataPage() {
   // Pie data
   const effectivePieData = useMemo(() => {
     if (mode === 'all') {
-      // One slice per player: their total games
       return PLAYERS.map(player => ({
         name: player,
-        value: chartData.bar_data.reduce((sum, row) => sum + ((row[player] as number) || 0), 0),
+        value: filteredBarData.reduce((sum, row) => sum + ((row[player] as number) || 0), 0),
       })).filter(d => d.value > 0)
     }
-    return chartData.pie_data.slice(0, 5)
-  }, [chartData.bar_data, chartData.pie_data, mode])
+    return filteredPieData.slice(0, 5)
+  }, [filteredBarData, filteredPieData, mode])
 
   const totalGamesLabel = mode === 'player'
     ? `games by ${selectedPlayer}`
@@ -388,6 +455,26 @@ export function DataPage() {
           />
         </div>
 
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Champions</p>
+          <div className="flex gap-1">
+            <Button
+              variant={poolOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setPoolOnly(true)}
+            >
+              Pool Only
+            </Button>
+            <Button
+              variant={!poolOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setPoolOnly(false)}
+            >
+              All
+            </Button>
+          </div>
+        </div>
+
         <Button variant="outline" size="sm" onClick={fetchCharts} disabled={loading}>
           {loading ? 'Loading...' : 'Refresh'}
         </Button>
@@ -395,7 +482,7 @@ export function DataPage() {
         <div className="ml-auto text-right">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Total Games</p>
           <p className="text-2xl font-bold text-foreground">
-            {(chartData.total_games ?? 0).toLocaleString()}
+            {(filteredTotalGames ?? 0).toLocaleString()}
           </p>
           <p className="text-xs text-muted-foreground">{totalGamesLabel}</p>
         </div>
@@ -548,7 +635,7 @@ export function DataPage() {
           )}
 
           {/* Trend line champion filter panel */}
-          {chartType === 'trend' && mode === 'all' && !lineByPlayer && lineFilterOpen && chartData.line_champions.length > 0 && (
+          {chartType === 'trend' && mode === 'all' && !lineByPlayer && lineFilterOpen && filteredLineChampions.length > 0 && (
             <div className="mt-3 rounded-md border p-3 space-y-3 bg-muted/50">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Champion Filter</p>
               {PLAYERS.map(player => {
@@ -709,38 +796,40 @@ export function DataPage() {
               ) : chartData.line_data.length === 0 || visibleLineChampions.length === 0 ? (
                 <EmptyChart />
               ) : (
-                <ResponsiveContainer width="100%" height={440}>
-                  <LineChart data={chartData.line_data} margin={{ top: 4, right: 16, left: 0, bottom: 16 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
-                    <XAxis
-                      dataKey="week"
-                      tick={chartAxisStyle}
-                      angle={-25}
-                      textAnchor="end"
-                      height={50}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis tick={chartAxisStyle} allowDecimals={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Legend
-                      layout="vertical"
-                      align="right"
-                      verticalAlign="middle"
-                      wrapperStyle={{ color: 'hsl(var(--muted-foreground))', fontSize: 11, paddingLeft: 8 }}
-                    />
-                    {visibleLineChampions.map((champion, index) => (
-                      <Line
-                        key={champion}
-                        type="monotone"
-                        dataKey={champion}
-                        stroke={PIE_COLORS[index % PIE_COLORS.length]}
-                        strokeWidth={2}
-                        dot={false}
-                        activeDot={{ r: 4 }}
+                <>
+                  <ResponsiveContainer width="100%" height={400}>
+                    <LineChart data={chartData.line_data} margin={{ top: 4, right: 16, left: 0, bottom: 16 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} />
+                      <XAxis
+                        dataKey="week"
+                        tick={chartAxisStyle}
+                        angle={-25}
+                        textAnchor="end"
+                        height={50}
+                        interval="preserveStartEnd"
                       />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
+                      <YAxis tick={chartAxisStyle} allowDecimals={false} />
+                      <Tooltip content={<ChartTooltip />} />
+                      {visibleLineChampions.map((champion) => (
+                        <Line
+                          key={champion}
+                          type="monotone"
+                          dataKey={champion}
+                          stroke={lineChampionColors[champion] ?? '#888'}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4 }}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                  <ChampionLegend
+                    champions={filteredLineChampions}
+                    excludedChampions={mode === 'all' ? lineExcludedChampions : undefined}
+                    onToggle={mode === 'all' ? toggleChampionLineFilter : undefined}
+                    colorMap={lineChampionColors}
+                  />
+                </>
               )}
             </>
           )}
@@ -787,6 +876,38 @@ export function DataPage() {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function ChampionLegend({ champions, excludedChampions, onToggle, colorMap }: {
+  champions: string[]
+  excludedChampions?: Set<string>
+  onToggle?: (champ: string) => void
+  colorMap: Record<string, string>
+}) {
+  if (champions.length === 0) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-3 px-1 pb-1">
+      {champions.map((champ) => {
+        const isExcluded = excludedChampions?.has(champ)
+        const color = colorMap[champ] ?? '#888'
+        return (
+          <button
+            key={champ}
+            onClick={() => onToggle?.(champ)}
+            title={onToggle ? (isExcluded ? `Show ${champ}` : `Hide ${champ}`) : champ}
+            className={`inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border transition-all ${
+              isExcluded
+                ? 'opacity-30 border-border/50 text-muted-foreground'
+                : 'border-border text-foreground bg-muted/20 hover:bg-muted/40'
+            } ${onToggle ? 'cursor-pointer' : 'cursor-default'}`}
+          >
+            <span className="inline-block h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+            {champ}
+          </button>
+        )
+      })}
     </div>
   )
 }

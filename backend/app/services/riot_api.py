@@ -7,6 +7,7 @@ and parses Riot data.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import List, Optional
@@ -16,6 +17,10 @@ import httpx
 
 RIOT_API_BASE = "https://europe.api.riotgames.com"
 DEFAULT_TIMEOUT = 15.0
+MAX_RETRIES = 8
+DEFAULT_RETRY_AFTER = 120  # seconds to wait if Retry-After header is missing
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,8 +46,8 @@ class RiotMatchData:
 class RiotAPIClient:
     """Async client for Riot Games API.
 
-    A new httpx.AsyncClient is created per request -- avoids connection issues
-    in long-running processes and is fine for our low-volume sync flow.
+    Use as an async context manager to reuse a single HTTP connection across
+    all calls: ``async with RiotAPIClient(api_key) as client: ...``
     """
 
     def __init__(self, api_key: str):
@@ -50,6 +55,41 @@ class RiotAPIClient:
             raise ValueError("RIOT_API_KEY is not configured")
         self.api_key = api_key
         self.headers = {"X-Riot-Token": api_key}
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def __aenter__(self) -> "RiotAPIClient":
+        self._client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT, headers=self.headers)
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        if self._client:
+            await self._client.aclose()
+            self._client = None
+
+    async def _get(self, url: str, params: Optional[dict] = None) -> httpx.Response:
+        """GET with automatic retry on 429 using Retry-After header.
+
+        Retries up to MAX_RETRIES times. On 429 waits for the value in the
+        Retry-After response header (defaults to DEFAULT_RETRY_AFTER seconds).
+        All other non-2xx responses raise immediately.
+        """
+        for attempt in range(MAX_RETRIES + 1):
+            response = await self._client.get(url, params=params)
+            if response.status_code != 429:
+                response.raise_for_status()
+                return response
+            if attempt == MAX_RETRIES:
+                response.raise_for_status()  # raises httpx.HTTPStatusError
+                return response  # unreachable, satisfies type checker
+            retry_after = int(response.headers.get("Retry-After", DEFAULT_RETRY_AFTER))
+            logger.warning(
+                "Riot API 429 on %s (attempt %d/%d) -- waiting %ds",
+                url, attempt + 1, MAX_RETRIES, retry_after,
+            )
+            await asyncio.sleep(retry_after)
+        # unreachable
+        response.raise_for_status()
+        return response
 
     async def get_puuid(self, game_name: str, tag_line: str) -> str:
         """Resolve a Riot ID (gameName#tagLine) to a stable PUUID.
@@ -59,10 +99,8 @@ class RiotAPIClient:
         429 (rate limited).
         """
         url = f"{RIOT_API_BASE}/riot/account/v1/accounts/by-riot-id/{game_name}/{tag_line}"
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            response = await client.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.json()["puuid"]
+        response = await self._get(url)
+        return response.json()["puuid"]
 
     async def get_match_ids(
         self,
@@ -74,18 +112,14 @@ class RiotAPIClient:
         """Return ranked solo match IDs for a player since start_time (epoch SECONDS)."""
         url = f"{RIOT_API_BASE}/lol/match/v5/matches/by-puuid/{puuid}/ids"
         params = {"queue": queue, "startTime": start_time, "count": count}
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            response = await client.get(url, headers=self.headers, params=params)
-            response.raise_for_status()
-            return response.json()
+        response = await self._get(url, params=params)
+        return response.json()
 
     async def get_match_detail(self, match_id: str, puuid: str) -> RiotMatchData:
         """Fetch a match and project just this player's stats + their teammates' PUUIDs."""
         url = f"{RIOT_API_BASE}/lol/match/v5/matches/{match_id}"
-        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-            response = await client.get(url, headers=self.headers)
-            response.raise_for_status()
-            data = response.json()
+        response = await self._get(url)
+        data = response.json()
 
         info = data["info"]
         participant = next((p for p in info["participants"] if p["puuid"] == puuid), None)
@@ -138,10 +172,8 @@ class RiotAPIClient:
         while True:
             url = f"{RIOT_API_BASE}/lol/match/v5/matches/by-puuid/{puuid}/ids"
             params = {"queue": queue, "start": start, "count": count}
-            async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-                response = await client.get(url, headers=self.headers, params=params)
-                response.raise_for_status()
-                page = response.json()
+            response = await self._get(url, params=params)
+            page = response.json()
             if known_match_ids:
                 page_new = [mid for mid in page if mid not in known_match_ids]
                 new_ids.extend(page_new)
@@ -162,8 +194,9 @@ class RiotAPIClient:
         since_date: date,
         queue: int = 420,
         known_match_ids: set = None,
+        concurrency: int = 5,
     ) -> List[RiotMatchData]:
-        """Fetch all matches for a player since since_date, with rate limiting between detail calls.
+        """Fetch all matches for a player since since_date concurrently.
 
         known_match_ids: set of riot_match_ids already in the DB. Detail calls are skipped for
         these -- only the match IDs list call is made, so repeat syncs are near-instant.
@@ -178,10 +211,22 @@ class RiotAPIClient:
         else:
             new_match_ids = all_match_ids
 
+        if not new_match_ids:
+            return []
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _fetch(mid: str) -> RiotMatchData:
+            async with sem:
+                return await self.get_match_detail(mid, puuid)
+
+        results = await asyncio.gather(*[_fetch(m) for m in new_match_ids], return_exceptions=True)
         games: List[RiotMatchData] = []
-        for match_id in new_match_ids:
-            game = await self.get_match_detail(match_id, puuid)
-            games.append(game)
+        for mid, r in zip(new_match_ids, results):
+            if isinstance(r, BaseException):
+                logger.warning("Skipping match %s for puuid %s: %s", mid, puuid, r)
+            else:
+                games.append(r)
         return games
 
     async def fetch_all_player_games(
@@ -189,22 +234,31 @@ class RiotAPIClient:
         puuid: str,
         known_match_ids: Optional[set] = None,
         queue: int = 420,
-        rate_limit_delay: float = 1.2,
+        concurrency: int = 5,
     ) -> List[RiotMatchData]:
         """Fetch full match history for a player with no date limit.
 
         Paginates through all available match IDs, skips any already stored in
-        known_match_ids, then fetches details with rate_limit_delay seconds
-        between calls to stay within the 100 requests / 2 minute rate limit.
+        known_match_ids, then fetches details concurrently (max concurrency at a time).
         """
         new_match_ids = await self.get_all_match_ids_paginated(
             puuid, queue=queue, known_match_ids=known_match_ids
         )
 
+        if not new_match_ids:
+            return []
+
+        sem = asyncio.Semaphore(concurrency)
+
+        async def _fetch(mid: str) -> RiotMatchData:
+            async with sem:
+                return await self.get_match_detail(mid, puuid)
+
+        results = await asyncio.gather(*[_fetch(m) for m in new_match_ids], return_exceptions=True)
         games: List[RiotMatchData] = []
-        for i, match_id in enumerate(new_match_ids):
-            if i > 0:
-                await asyncio.sleep(rate_limit_delay)
-            game = await self.get_match_detail(match_id, puuid)
-            games.append(game)
+        for mid, r in zip(new_match_ids, results):
+            if isinstance(r, BaseException):
+                logger.warning("Skipping match %s for puuid %s: %s", mid, puuid, r)
+            else:
+                games.append(r)
         return games

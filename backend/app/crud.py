@@ -1,6 +1,9 @@
 import asyncio
 import logging
 import os
+import time as _time
+from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Set
 
@@ -12,12 +15,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
 from .database import AsyncSessionLocal
 from .services import match_eligibility
+from .services.charting import invalidate_chart_cache
 from .services.riot_api import RiotAPIClient, RiotMatchData
 
 logger = logging.getLogger(__name__)
 
 # Hour (local time) at which the week resets on the configured weekday.
 WEEK_RESET_HOUR = 16
+
+WEEK_START_CACHE_TTL_SECONDS = 60
+
+
+@dataclass
+class _WeekStartCacheEntry:
+    value: date
+    expires_at: float
+
+
+_week_start_cache: dict[date, _WeekStartCacheEntry] = {}
+
+
+def _invalidate_week_start_cache() -> None:
+    _week_start_cache.clear()
 
 
 def _get_week_start(target_date: Optional[date] = None) -> date:
@@ -101,6 +120,10 @@ async def get_configured_week_start(
     config boundaries.
     """
     resolved_target_date = target_date or datetime.now().date()
+    cache_key = resolved_target_date
+    entry = _week_start_cache.get(cache_key)
+    if entry and _time.monotonic() < entry.expires_at:
+        return entry.value
     try:
         result = await db.execute(
             select(models.WeekResetConfig).where(
@@ -127,6 +150,10 @@ async def get_configured_week_start(
         return await get_configured_week_start(
             db, rule.effective_from_date - timedelta(days=1)
         )
+    _week_start_cache[cache_key] = _WeekStartCacheEntry(
+        value=week_start,
+        expires_at=_time.monotonic() + WEEK_START_CACHE_TTL_SECONDS,
+    )
     return week_start
 
 # Session Review CRUD
@@ -1281,6 +1308,46 @@ async def remove_excluded_friend(
     return True
 
 
+async def get_all_excluded_friends_global(
+    db: AsyncSession,
+) -> List[models.ExcludedFriend]:
+    """Return all global excluded-friend rows (one per riot_id)."""
+    result = await db.execute(
+        select(models.ExcludedFriend).order_by(models.ExcludedFriend.riot_id)
+    )
+    return list(result.scalars().all())
+
+
+async def add_excluded_friend_global(
+    db: AsyncSession,
+    riot_id: str,
+    region: str = "euw",
+) -> models.ExcludedFriend:
+    """Add a global excluded friend (one row, not tied to any roster player)."""
+    friend = models.ExcludedFriend(
+        player_name="global",
+        riot_id=riot_id.strip(),
+        region=region,
+    )
+    db.add(friend)
+    await db.commit()
+    await db.refresh(friend)
+    return friend
+
+
+async def remove_excluded_friend_by_id(
+    db: AsyncSession,
+    friend_id: int,
+) -> bool:
+    """Remove a global excluded-friend row by id."""
+    friend = await db.get(models.ExcludedFriend, friend_id)
+    if not friend:
+        return False
+    await db.delete(friend)
+    await db.commit()
+    return True
+
+
 # --- Sync Run CRUD -----------------------------------------------------------
 
 
@@ -1347,11 +1414,13 @@ async def sync_player_games(
 
     target_week_start = week_start or await get_configured_week_start(db)
 
-    if riot_client is None:
+    _own_client = riot_client is None
+    if _own_client:
         api_key = os.getenv("RIOT_API_KEY")
         if not api_key:
             raise ValueError("RIOT_API_KEY is not configured on the server")
         riot_client = RiotAPIClient(api_key=api_key)
+        await riot_client.__aenter__()
 
     # 1. Resolve & cache the roster player's PUUID.
     if not player.puuid:
@@ -1365,7 +1434,7 @@ async def sync_player_games(
     puuid = player.puuid
 
     # 2. Resolve & cache excluded-friend PUUIDs (lazy, one Account-V1 call per friend, first time only).
-    excluded_friends = await get_excluded_friends(db, player_name)
+    excluded_friends = await get_all_excluded_friends_global(db)
     for friend in excluded_friends:
         if friend.puuid:
             continue
@@ -1462,8 +1531,31 @@ async def sync_player_games(
         )
         games_synced += 1
 
+    # Retroactive exclusion: remove weekly_champions rows for any previously-synced
+    # games that now involve an excluded friend (handles friends added after initial sync).
+    if excluded_puuids:
+        await db.flush()
+        all_week_matches = await get_match_history_for_week(db, player_name, target_week_start)
+        for match in all_week_matches:
+            if match.user_excluded:
+                continue
+            if not (set(match.team_puuids or []) & excluded_puuids):
+                continue
+            match.user_excluded = True
+            wc_retro = await db.execute(
+                select(models.WeeklyChampion).where(
+                    models.WeeklyChampion.player_name == player_name,
+                    models.WeeklyChampion.riot_match_id == match.riot_match_id,
+                )
+            )
+            wc_row = wc_retro.scalar_one_or_none()
+            if wc_row is not None:
+                await db.delete(wc_row)
+
     await db.commit()
 
+    if _own_client:
+        await riot_client.__aexit__(None, None, None)
     return schemas.SyncResult(
         player_name=player_name,
         games_synced=games_synced,
@@ -1504,25 +1596,26 @@ async def sync_all_players(
     eligible_players = [p for p in players if p.riot_id]
 
     api_key = os.getenv("RIOT_API_KEY")
-    riot_client = RiotAPIClient(api_key=api_key) if api_key else None
+    _client_ctx = RiotAPIClient(api_key=api_key) if api_key else nullcontext(None)
 
     per_player: List[schemas.SyncResult] = []
     failed_players: List[str] = []
 
-    async def _sync_one(player_name: str) -> schemas.SyncResult:
-        """Sync a single player using a dedicated DB session."""
-        async with AsyncSessionLocal() as player_db:
-            return await sync_player_games(
-                player_db,
-                player_name=player_name,
-                week_start=week_start,
-                riot_client=riot_client,
-            )
+    async with _client_ctx as riot_client:
+        async def _sync_one(player_name: str) -> schemas.SyncResult:
+            """Sync a single player using a dedicated DB session."""
+            async with AsyncSessionLocal() as player_db:
+                return await sync_player_games(
+                    player_db,
+                    player_name=player_name,
+                    week_start=week_start,
+                    riot_client=riot_client,
+                )
 
-    raw_results = await asyncio.gather(
-        *[_sync_one(p.player_name) for p in eligible_players],
-        return_exceptions=True,
-    )
+        raw_results = await asyncio.gather(
+            *[_sync_one(p.player_name) for p in eligible_players],
+            return_exceptions=True,
+        )
 
     for player, result in zip(eligible_players, raw_results):
         if isinstance(result, Exception):
@@ -1575,6 +1668,7 @@ async def sync_all_players(
     run.status = status
     run.summary = summary.model_dump(mode="json")
     await db.commit()
+    invalidate_chart_cache()
 
     return summary
 
@@ -1596,11 +1690,13 @@ async def full_sync_player_games(
     if not player.riot_id:
         raise ValueError(f"Player {player_name} has no riot_id set")
 
-    if riot_client is None:
+    _own_client = riot_client is None
+    if _own_client:
         api_key = os.getenv("RIOT_API_KEY")
         if not api_key:
             raise ValueError("RIOT_API_KEY is not configured on the server")
         riot_client = RiotAPIClient(api_key=api_key)
+        await riot_client.__aenter__()
 
     # 1. Resolve & cache PUUID.
     if not player.puuid:
@@ -1614,7 +1710,7 @@ async def full_sync_player_games(
     puuid = player.puuid
 
     # 2. Resolve & cache excluded-friend PUUIDs.
-    excluded_friends = await get_excluded_friends(db, player_name)
+    excluded_friends = await get_all_excluded_friends_global(db)
     for friend in excluded_friends:
         if friend.puuid or "#" not in friend.riot_id:
             continue
@@ -1643,6 +1739,8 @@ async def full_sync_player_games(
     )
 
     if not games:
+        if _own_client:
+            await riot_client.__aexit__(None, None, None)
         return schemas.SyncResult(
             player_name=player_name,
             games_synced=0,
@@ -1729,8 +1827,35 @@ async def full_sync_player_games(
         )
         games_synced += 1
 
+    # Retroactive exclusion: remove weekly_champions rows for any previously-synced
+    # games that now involve an excluded friend (handles friends added after initial sync).
+    if excluded_puuids:
+        await db.flush()
+        all_match_result = await db.execute(
+            select(models.MatchHistory).where(
+                models.MatchHistory.player_name == player_name,
+                models.MatchHistory.user_excluded.is_(False),
+            )
+        )
+        all_matches = list(all_match_result.scalars().all())
+        for match in all_matches:
+            if not (set(match.team_puuids or []) & excluded_puuids):
+                continue
+            match.user_excluded = True
+            wc_retro = await db.execute(
+                select(models.WeeklyChampion).where(
+                    models.WeeklyChampion.player_name == player_name,
+                    models.WeeklyChampion.riot_match_id == match.riot_match_id,
+                )
+            )
+            wc_row = wc_retro.scalar_one_or_none()
+            if wc_row is not None:
+                await db.delete(wc_row)
+
     await db.commit()
 
+    if _own_client:
+        await riot_client.__aexit__(None, None, None)
     return schemas.SyncResult(
         player_name=player_name,
         games_synced=games_synced,
@@ -1783,7 +1908,7 @@ async def full_sync_all_players(
     eligible_players = [p for p in players if p.riot_id]
 
     api_key = os.getenv("RIOT_API_KEY")
-    riot_client = RiotAPIClient(api_key=api_key) if api_key else None
+    _client_ctx = RiotAPIClient(api_key=api_key) if api_key else nullcontext(None)
 
     per_player: List[schemas.SyncResult] = []
     failed_players: List[str] = []
@@ -1796,46 +1921,47 @@ async def full_sync_all_players(
     completed_players = list(existing_progress.get("completed_players", []))
     skipped = set(completed_players)
 
-    for idx, player in enumerate(eligible_players):
-        if player.player_name in skipped:
-            logger.info("Full sync: skipping already-completed player %s", player.player_name)
-            continue
+    async with _client_ctx as riot_client:
+        for idx, player in enumerate(eligible_players):
+            if player.player_name in skipped:
+                logger.info("Full sync: skipping already-completed player %s", player.player_name)
+                continue
 
-        # Write progress before starting this player so polling sees who's active.
-        run.progress = schemas.FullSyncProgress(
-            players_total=len(eligible_players),
-            players_done=len(completed_players),
-            current_player=player.player_name,
-            games_synced_so_far=games_synced_so_far,
-            games_found_so_far=games_found_so_far,
-            completed_players=completed_players,
-        ).model_dump()
-        await db.commit()
+            # Write progress before starting this player so polling sees who's active.
+            run.progress = schemas.FullSyncProgress(
+                players_total=len(eligible_players),
+                players_done=len(completed_players),
+                current_player=player.player_name,
+                games_synced_so_far=games_synced_so_far,
+                games_found_so_far=games_found_so_far,
+                completed_players=completed_players,
+            ).model_dump()
+            await db.commit()
 
-        try:
-            async with AsyncSessionLocal() as player_db:
-                result = await full_sync_player_games(
-                    player_db,
-                    player_name=player.player_name,
-                    riot_client=riot_client,
+            try:
+                async with AsyncSessionLocal() as player_db:
+                    result = await full_sync_player_games(
+                        player_db,
+                        player_name=player.player_name,
+                        riot_client=riot_client,
+                    )
+                per_player.append(result)
+                games_synced_so_far += result.games_synced
+                games_found_so_far += result.total_games_found
+                completed_players.append(player.player_name)
+            except Exception as exc:
+                logger.exception("Full sync failed for %s: %s", player.player_name, exc)
+                failed_players.append(player.player_name)
+                per_player.append(
+                    schemas.SyncResult(
+                        player_name=player.player_name,
+                        games_synced=0,
+                        games_excluded=0,
+                        games_already_present=0,
+                        total_games_found=0,
+                        message=f"Failed: {exc}",
+                    )
                 )
-            per_player.append(result)
-            games_synced_so_far += result.games_synced
-            games_found_so_far += result.total_games_found
-            completed_players.append(player.player_name)
-        except Exception as exc:
-            logger.exception("Full sync failed for %s: %s", player.player_name, exc)
-            failed_players.append(player.player_name)
-            per_player.append(
-                schemas.SyncResult(
-                    player_name=player.player_name,
-                    games_synced=0,
-                    games_excluded=0,
-                    games_already_present=0,
-                    total_games_found=0,
-                    message=f"Failed: {exc}",
-                )
-            )
 
     finished_at = datetime.now(timezone.utc)
     total_games_synced = sum(r.games_synced for r in per_player)
@@ -1878,6 +2004,7 @@ async def full_sync_all_players(
         games_found_so_far=total_games_found,
     ).model_dump()
     await db.commit()
+    invalidate_chart_cache()
 
     return summary
 

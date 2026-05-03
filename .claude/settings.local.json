@@ -100,7 +100,10 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\" -Recurse -Force)",
       "WebFetch(domain:developer.riotgames.com)",
       "mcp__Neon__prepare_database_migration",
-      "mcp__Neon__complete_database_migration"
+      "mcp__Neon__complete_database_migration",
+      "Bash(mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-concurrent-riot-fetches.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\" && mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-reuse-httpx-client.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\")",
+      "Bash(mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-ttl-cache-week-config.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\" && mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-cache-chart-dataframe.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\")",
+      "Bash(mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-cache-control-headers.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\" && mv \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\perf-frontend-parallel-fetches.md\" \"C:\\\\Users\\\\sinus\\\\OneDrive\\\\Documents\\\\GitHub\\\\MnM-home\\\\PRPs\\\\implemented\\\\\")"
     ],
     "deny": []
   }

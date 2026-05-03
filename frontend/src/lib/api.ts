@@ -100,7 +100,8 @@ export function getLineChartUrl(params: LineChartParams) {
 // Helper function to make API calls with retry logic and timeout
 async function apiFetch(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs = 10000
 ): Promise<Response> {
   type HttpError = Error & { status?: number }
 
@@ -108,7 +109,7 @@ async function apiFetch(
     const response = await fetchWithTimeout(
       `${API_URL}${endpoint}`,
       options,
-      10000 // 10 second timeout
+      timeoutMs
     )
 
     if (!response.ok) {
@@ -647,7 +648,9 @@ export const api = {
     const url = qs
       ? `/api/players/sync-all?${qs}`
       : '/api/players/sync-all'
-    const response = await apiFetch(url, { method: 'POST' })
+    // No retries: a timed-out sync is still running server-side; retrying causes 409.
+    // 120s timeout: sync calls Riot API sequentially for all players.
+    const response = await apiFetch(url, { method: 'POST' }, 120000)
     return response.json()
   },
 
@@ -666,7 +669,26 @@ export const api = {
     return response.json()
   },
 
-  // Excluded Friends
+  // Excluded Friends (global)
+  async getExcludedFriendsGlobal(): Promise<ExcludedFriend[]> {
+    const response = await apiFetch('/api/players/excluded-friends')
+    return response.json()
+  },
+
+  async addExcludedFriendGlobal(body: { riot_id: string; region?: string }): Promise<ExcludedFriend> {
+    const response = await apiFetch('/api/players/excluded-friends', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ region: 'euw', ...body }),
+    })
+    return response.json()
+  },
+
+  async removeExcludedFriendGlobal(friendId: number): Promise<void> {
+    await apiFetch(`/api/players/excluded-friends/${friendId}`, { method: 'DELETE' })
+  },
+
+  // Excluded Friends (per-player)
   async getExcludedFriends(playerName: string): Promise<ExcludedFriend[]> {
     const response = await apiFetch(
       `/api/players/${encodeURIComponent(playerName)}/excluded-friends`

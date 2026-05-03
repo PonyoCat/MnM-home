@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import time as _time
+from dataclasses import dataclass
 from datetime import date
 from io import BytesIO
 from itertools import cycle, islice
-from typing import Optional
+from typing import Any, Optional
 
 import matplotlib
 
@@ -23,6 +25,21 @@ from .. import crud, models
 
 logger = logging.getLogger(__name__)
 _archive_table_available: Optional[bool] = None
+
+CHART_CACHE_TTL_SECONDS = 300
+
+
+@dataclass
+class _ChartCacheEntry:
+    value: Any
+    expires_at: float
+
+
+_chart_cache: dict[tuple, _ChartCacheEntry] = {}
+
+
+def invalidate_chart_cache() -> None:
+    _chart_cache.clear()
 
 PLAYERS = ["Alex", "Hans", "Elias", "Mikkel", "Sinus"]
 PLAYER_COLORS = {

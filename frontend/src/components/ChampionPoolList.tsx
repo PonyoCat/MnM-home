@@ -48,7 +48,8 @@ export function ChampionPoolList() {
   const [players, setPlayers] = useState<Player[]>([])
   const [playerPools, setPlayerPools] = useState<Record<string, ChampionPool[]>>({})
   const [matchHistory, setMatchHistory] = useState<Record<string, MatchHistory[]>>({})
-  const [excludedFriends, setExcludedFriends] = useState<Record<string, ExcludedFriend[]>>({})
+  const [excludedFriends, setExcludedFriends] = useState<ExcludedFriend[]>([])
+  const [friendsError, setFriendsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
   const [expandedPlayers, setExpandedPlayers] = useState<Record<string, boolean>>({})
@@ -58,8 +59,8 @@ export function ChampionPoolList() {
   const [riotIdInputs, setRiotIdInputs] = useState<Record<string, string>>({})
   const [savingRiotId, setSavingRiotId] = useState<Record<string, boolean>>({})
 
-  // Excluded friend inputs (controlled per player)
-  const [friendInputs, setFriendInputs] = useState<Record<string, string>>({})
+  // Excluded friend add input
+  const [friendInput, setFriendInput] = useState<string>('')
 
   // Quick sync state
   const [syncingAll, setSyncingAll] = useState(false)
@@ -69,6 +70,7 @@ export function ChampionPoolList() {
 
   // Full sync (background) state
   const [fullSyncing, setFullSyncing] = useState(false)
+  const [showFullSyncConfirm, setShowFullSyncConfirm] = useState(false)
   const fullSyncToastId = useRef<string | number | null>(null)
   const fullSyncInterval = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -114,6 +116,7 @@ export function ChampionPoolList() {
       setLastSyncedAt(lastSync.last_synced_at)
 
       await loadPools(names)
+      await loadExcludedFriends()
     } catch (e) {
       console.error('Error loading players/pools:', e)
       setError(e as Error)
@@ -146,12 +149,15 @@ export function ChampionPoolList() {
     }
   }
 
-  async function loadExcludedFriends(playerName: string) {
+  async function loadExcludedFriends() {
     try {
-      const friends = await api.getExcludedFriends(playerName)
-      setExcludedFriends((prev) => ({ ...prev, [playerName]: friends }))
+      setFriendsError(null)
+      const friends = await api.getExcludedFriendsGlobal()
+      setExcludedFriends(friends)
     } catch (e) {
-      console.error(`Failed to load excluded friends for ${playerName}:`, e)
+      const msg = e instanceof Error ? e.message : 'Failed to load excluded friends'
+      console.error('Failed to load excluded friends:', e)
+      setFriendsError(msg)
     }
   }
 
@@ -257,26 +263,27 @@ export function ChampionPoolList() {
     }
   }
 
-  async function addFriend(playerName: string) {
-    const value = (friendInputs[playerName] ?? '').trim()
+  async function addFriendGlobal() {
+    const value = friendInput.trim()
     if (!value || !value.includes('#')) {
-      alert('Friend Riot ID must be in "Name#Tag" format')
+      toast.error('Friend Riot ID must be in "Name#Tag" format')
       return
     }
     try {
-      await api.addExcludedFriend(playerName, { riot_id: value })
-      setFriendInputs((prev) => ({ ...prev, [playerName]: '' }))
-      await loadExcludedFriends(playerName)
-    } catch (e) {
+      const added = await api.addExcludedFriendGlobal({ riot_id: value })
+      setFriendInput('')
+      setExcludedFriends((prev) => [...prev, added])
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to add excluded friend'
+      toast.error(msg)
       console.error('Failed to add excluded friend:', e)
-      alert('Failed to add excluded friend')
     }
   }
 
-  async function removeFriend(playerName: string, friendId: number) {
+  async function removeFriend(friendId: number) {
     try {
-      await api.removeExcludedFriend(playerName, friendId)
-      await loadExcludedFriends(playerName)
+      await api.removeExcludedFriendGlobal(friendId)
+      await loadExcludedFriends()
     } catch (e) {
       console.error('Failed to remove friend:', e)
     }
@@ -330,24 +337,31 @@ export function ChampionPoolList() {
         )
         if (r?.finished_at) setLastSyncedAt(r.finished_at)
       } else {
-        toast.error(`Full sync failed \u2014 ${r?.message ?? statusData.status}`, {
-          id: toastId,
-          duration: 10000,
-        })
+        const perPlayerErrors = r?.per_player
+          ?.filter((p: { message?: string }) => p.message?.startsWith('Failed:'))
+          .map((p: { player_name: string; message: string }) => `${p.player_name}: ${p.message.replace('Failed: ', '')}`)
+          .join(' | ')
+        toast.error(
+          `Full sync failed \u2014 ${r?.message ?? statusData.status}${perPlayerErrors ? ` (${perPlayerErrors})` : ''}`,
+          { id: toastId, duration: 10000 },
+        )
       }
     }, 4000)
   }
 
   async function runFullSync() {
     if (fullSyncing) return
+    setShowFullSyncConfirm(true)
+  }
+
+  async function confirmFullSync() {
+    setShowFullSyncConfirm(false)
     try {
       const started = await api.startFullSync()
       startFullSyncPolling(started.run_id)
     } catch (e) {
       const err = e as Error & { status?: number }
       if (err.status === 409) {
-        // A sync is already running — get its run_id from the error detail if possible
-        // or just inform the user
         toast.error('Full sync already in progress')
       } else if (err.status === 502) {
         toast.error('Riot API unreachable or API key invalid')
@@ -456,7 +470,6 @@ export function ChampionPoolList() {
             const name = player.player_name
             const isExpanded = expandedPlayers[name]
             const matches = matchHistory[name] ?? []
-            const friends = excludedFriends[name] ?? []
             const showHistory = showHistoryFor[name]
 
             return (
@@ -499,56 +512,13 @@ export function ChampionPoolList() {
                       )}
                     </div>
 
-                    {/* Excluded Friends Section */}
-                    <div className="rounded-md border border-border p-3 space-y-2">
-                      <div className="text-sm font-medium">Excluded Friends</div>
-                      <div className="text-xs text-muted-foreground">
-                        Games queued with these Riot IDs on your team won't count toward accountability.
-                      </div>
-                      <div className="space-y-1">
-                        {friends.length === 0 && (
-                          <div className="text-xs text-muted-foreground">No excluded friends.</div>
-                        )}
-                        {friends.map((f) => (
-                          <div key={f.id} className="flex items-center gap-2 text-sm">
-                            <span>{f.riot_id}</span>
-                            {!f.puuid && (
-                              <span
-                                className="text-xs text-amber-600"
-                                title="Not yet resolved by Riot API -- may be unreachable"
-                              >
-                                (unresolved)
-                              </span>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => removeFriend(name, f.id)}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="FriendName#Tag"
-                          value={friendInputs[name] ?? ''}
-                          onChange={(e) =>
-                            setFriendInputs((prev) => ({ ...prev, [name]: e.target.value }))
-                          }
-                        />
-                        <Button onClick={() => addFriend(name)}>Add</Button>
-                      </div>
-                    </div>
-
                     {/* Match History Section */}
                     <div className="rounded-md border border-border p-3 space-y-2">
                       <div
                         className="flex items-center gap-2 cursor-pointer text-sm font-medium"
                         onClick={() => toggleHistory(name)}
                       >
-                        <span>{showHistory ? '▼' : '▶'}</span>
+                        <span>{showHistory ? '\u25bc' : '\u25b6'}</span>
                         Match History
                       </div>
                       {showHistory && (
@@ -723,6 +693,68 @@ export function ChampionPoolList() {
         </CardContent>
       </Card>
 
+      {/* Excluded Friends Card */}
+      <Card className="mt-4">
+        <CardHeader>
+          <CardTitle>Excluded Friends</CardTitle>
+          <p className="text-sm text-muted-foreground pt-1">
+            Games queued with these Riot IDs on your team won't count toward accountability for anyone. Changes take effect on the next sync.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {friendsError && (
+            <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-900 dark:bg-red-950 dark:text-red-100 flex items-center justify-between">
+              <span>Failed to load: {friendsError}</span>
+              <Button size="sm" variant="outline" onClick={loadExcludedFriends}>Retry</Button>
+            </div>
+          )}
+          {!friendsError && excludedFriends.length === 0 && (
+            <div className="text-sm text-muted-foreground">No excluded friends added yet.</div>
+          )}
+          {excludedFriends.map((f) => (
+            <div key={f.id} className="flex items-center gap-2 text-sm">
+              <span>{f.riot_id}</span>
+              {f.puuid ? (
+                <span
+                  className="text-xs text-green-600"
+                  title={`PUUID: ${f.puuid}`}
+                >
+                  PUUID verified
+                </span>
+              ) : (
+                <span
+                  className="text-xs text-amber-600"
+                  title="PUUID not yet resolved — will be looked up on next sync"
+                >
+                  No PUUID match
+                </span>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-auto"
+                onClick={() => removeFriend(f.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <div className="flex gap-2 pt-2">
+            <Input
+              placeholder="FriendName#Tag"
+              value={friendInput}
+              onChange={(e) => setFriendInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addFriendGlobal()
+              }}
+            />
+            <Button onClick={addFriendGlobal}>
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent>
@@ -799,6 +831,23 @@ export function ChampionPoolList() {
             >
               Confirm Delete
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showFullSyncConfirm} onOpenChange={setShowFullSyncConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run Full Historical Sync?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will fetch the complete match history for all players going as far back as possible.
+              A full sync can take upwards of multiple hours depending on how many games exist.
+              The sync runs in the background — you can close this page and check back later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmFullSync}>Start Full Sync</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
