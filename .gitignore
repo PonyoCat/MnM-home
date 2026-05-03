@@ -34,3 +34,6 @@ scripts/neon-mcp-stdio.js
 # Render doesn't use _redirects files (Netlify-specific)
 frontend/public/_redirects
 docs/
+.claude/commands/execute-prp.md
+.claude/commands/generate-prp.md
+.claude/commands/ultimate_validate_command.md
