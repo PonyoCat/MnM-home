@@ -230,8 +230,8 @@ export function ChampionPoolList() {
   async function togglePlayerExpanded(playerName: string) {
     const willExpand = !expandedPlayers[playerName]
     setExpandedPlayers((prev) => ({ ...prev, [playerName]: willExpand }))
-    if (willExpand && !excludedFriends[playerName]) {
-      await loadExcludedFriends(playerName)
+    if (willExpand && excludedFriends.length === 0) {
+      await loadExcludedFriends()
     }
   }
 
