@@ -260,14 +260,25 @@ export function WeeklyChampions() {
                           <div className="divide-y divide-border">
                             {matches.map(m => {
                               const excluded = m.user_excluded || m.queue_id !== 420
+                              const rowBg = m.is_remake
+                                ? 'bg-blue-50 dark:bg-blue-950/30'
+                                : m.won
+                                ? 'bg-green-50 dark:bg-green-950/30'
+                                : 'bg-red-50 dark:bg-red-950/30'
+                              const letterColor = m.is_remake
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : m.won
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                              const letter = m.is_remake ? 'R' : m.won ? 'W' : 'L'
                               return (
                                 <div
                                   key={m.id}
-                                  className={`grid grid-cols-[2rem_1fr_4rem_4rem_3rem_3rem] items-center gap-x-3 px-3 py-2 text-sm ${excluded ? 'opacity-50' : m.won ? 'bg-green-50 dark:bg-green-950/30' : 'bg-red-50 dark:bg-red-950/30'}`}
-                                  title={m.user_excluded ? 'Excluded' : m.queue_id !== 420 ? `Queue ${m.queue_id} (not ranked)` : ''}
+                                  className={`grid grid-cols-[2rem_1fr_4rem_4rem_3rem_3rem] items-center gap-x-3 px-3 py-2 text-sm ${excluded ? 'opacity-50' : rowBg}`}
+                                  title={m.user_excluded ? 'Excluded' : m.is_remake ? 'Remake' : m.queue_id !== 420 ? `Queue ${m.queue_id} (not ranked)` : ''}
                                 >
-                                  <span className={`font-bold text-xs text-center ${m.won ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                    {m.won ? 'W' : 'L'}
+                                  <span className={`font-bold text-xs text-center ${letterColor}`}>
+                                    {letter}
                                   </span>
                                   <span className="font-medium truncate">{m.champion_name}</span>
                                   <span className="text-muted-foreground text-xs text-center tabular-nums">

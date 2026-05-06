@@ -545,19 +545,20 @@ export function ChampionPoolList() {
                               <TableBody>
                                 {matches.map((m) => {
                                   const greyed = m.user_excluded || m.queue_id !== 420
+                                  const rowBg = m.is_remake
+                                    ? 'bg-blue-50 dark:bg-blue-950/30'
+                                    : m.won
+                                    ? 'bg-green-50 dark:bg-green-950/30'
+                                    : 'bg-red-50 dark:bg-red-950/30'
                                   return (
                                     <TableRow
                                       key={m.id}
-                                      className={
-                                        greyed
-                                          ? 'opacity-50'
-                                          : m.won
-                                          ? 'bg-green-50 dark:bg-green-950/30'
-                                          : 'bg-red-50 dark:bg-red-950/30'
-                                      }
+                                      className={greyed ? 'opacity-50' : rowBg}
                                       title={
                                         m.user_excluded
                                           ? 'Manually excluded'
+                                          : m.is_remake
+                                          ? 'Remake'
                                           : m.queue_id !== 420
                                           ? `Queue ${m.queue_id} (not ranked solo/duo)`
                                           : ''
@@ -567,7 +568,15 @@ export function ChampionPoolList() {
                                         {m.champion_name}
                                       </TableCell>
                                       <TableCell>
-                                        {m.won ? 'Win' : 'Loss'}
+                                        <span
+                                          className={
+                                            m.is_remake
+                                              ? 'font-bold text-blue-600 dark:text-blue-400'
+                                              : ''
+                                          }
+                                        >
+                                          {m.is_remake ? 'R' : m.won ? 'Win' : 'Loss'}
+                                        </span>
                                       </TableCell>
                                       <TableCell>
                                         {m.kills}/{m.deaths}/{m.assists}

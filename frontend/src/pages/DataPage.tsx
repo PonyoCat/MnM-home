@@ -110,21 +110,42 @@ interface PlayerGroup {
 function buildGroupedBarData(
   barData: Record<string, string | number>[],
   players: readonly string[],
+  pools?: Record<string, string[]>,
 ): { entries: GroupedBarEntry[]; groups: PlayerGroup[] } {
   const playerChampions = new Map<string, GroupedBarEntry[]>()
   for (const player of players) playerChampions.set(player, [])
+
+  // Build champion → single pool owner map ('' if contested by multiple players)
+  const champPoolOwner = new Map<string, string>()
+  if (pools) {
+    for (const [player, champs] of Object.entries(pools)) {
+      for (const champ of champs) {
+        champPoolOwner.set(champ, champPoolOwner.has(champ) ? '' : player)
+      }
+    }
+  }
 
   for (const row of barData) {
     const champion = row.champion as string
     let bestPlayer = ''
     let bestGames = 0
-    for (const player of players) {
-      const games = (row[player] as number) || 0
-      if (games > bestGames) {
-        bestGames = games
-        bestPlayer = player
+
+    const poolOwner = champPoolOwner.get(champion)
+    if (poolOwner) {
+      // Single uncontested pool owner — assign to them
+      bestPlayer = poolOwner
+      bestGames = (row[poolOwner] as number) || 0
+    } else {
+      // No pool owner or contested — assign to player with most games
+      for (const player of players) {
+        const games = (row[player] as number) || 0
+        if (games > bestGames) {
+          bestGames = games
+          bestPlayer = player
+        }
       }
     }
+
     if (bestGames > 0 && bestPlayer) {
       playerChampions.get(bestPlayer)!.push({ champion, games: bestGames, player: bestPlayer })
     }
@@ -288,8 +309,8 @@ export function DataPage() {
   // Grouped bar data (all mode)
   const groupedBarData = useMemo(() => {
     if (mode !== 'all' || !barGrouped || filteredBarData.length === 0) return null
-    return buildGroupedBarData(filteredBarData, PLAYERS)
-  }, [filteredBarData, mode, barGrouped])
+    return buildGroupedBarData(filteredBarData, PLAYERS, allPools)
+  }, [filteredBarData, mode, barGrouped, allPools])
 
   // Sorted bar data (all mode, sorted sub-mode)
   const barSortedN = Math.max(1, Math.min(999, parseInt(barSortedNInput) || 5))

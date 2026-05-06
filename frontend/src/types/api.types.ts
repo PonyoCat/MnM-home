@@ -126,6 +126,7 @@ export interface MatchHistory {
   week_start_date: string
   queue_id: number
   user_excluded: boolean
+  is_remake: boolean
   created_at: string | null
 }
 

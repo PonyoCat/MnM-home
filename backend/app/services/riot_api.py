@@ -41,6 +41,9 @@ class RiotMatchData:
     game_start_time: datetime
     queue_id: int
     team_puuids: List[str] = field(default_factory=list)
+    # True when participant.gameEndedInEarlySurrender is set -- canonical Riot
+    # signal for a remake (game aborted before 3:30 due to AFK).
+    is_remake: bool = False
 
 
 class RiotAPIClient:
@@ -150,6 +153,7 @@ class RiotAPIClient:
             game_start_time=datetime.fromtimestamp(info["gameStartTimestamp"] / 1000),
             queue_id=info.get("queueId", 0),
             team_puuids=team_puuids,
+            is_remake=bool(participant.get("gameEndedInEarlySurrender", False)),
         )
 
     async def get_all_match_ids_paginated(
@@ -238,12 +242,19 @@ class RiotAPIClient:
     ) -> List[RiotMatchData]:
         """Fetch full match history for a player with no date limit.
 
-        Paginates through all available match IDs, skips any already stored in
-        known_match_ids, then fetches details concurrently (max concurrency at a time).
+        Always pages through ALL available match IDs (no early-stop), then
+        skips detail calls for IDs already in known_match_ids.  Not passing
+        known_match_ids to get_all_match_ids_paginated is intentional: the
+        early-stop heuristic breaks when weekly syncs have already stored the
+        most-recent page of matches -- the paginator would bail immediately and
+        miss older history that was never fetched.
         """
-        new_match_ids = await self.get_all_match_ids_paginated(
-            puuid, queue=queue, known_match_ids=known_match_ids
-        )
+        all_match_ids = await self.get_all_match_ids_paginated(puuid, queue=queue)
+
+        if known_match_ids:
+            new_match_ids = [mid for mid in all_match_ids if mid not in known_match_ids]
+        else:
+            new_match_ids = all_match_ids
 
         if not new_match_ids:
             return []

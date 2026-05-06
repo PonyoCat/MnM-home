@@ -27,10 +27,14 @@ def evaluate_match(
     team_puuids: Iterable[str],
     excluded_puuids: FrozenSet[str],
     user_excluded: bool,
+    is_remake: bool = False,
 ) -> EligibilityVerdict:
     """Decide whether a synced match should produce a weekly_champions row for this player."""
     if user_excluded:
         return EligibilityVerdict(False, "user manually excluded this match")
+
+    if is_remake:
+        return EligibilityVerdict(False, "remake")
 
     if queue_id not in COUNTING_QUEUE_IDS:
         return EligibilityVerdict(False, f"queue {queue_id} does not count toward accountability")

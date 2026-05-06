@@ -5,7 +5,7 @@ import time as _time
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 
 import httpx
 from sqlalchemy import desc, or_, select
@@ -19,6 +19,32 @@ from .services.charting import invalidate_chart_cache
 from .services.riot_api import RiotAPIClient, RiotMatchData
 
 logger = logging.getLogger(__name__)
+
+# Display-form champion names that map to a different Riot Match-V5 championName.
+# Riot uses Data Dragon IDs; for most champs those collapse to the same alphanumeric
+# lowercase key as the display name (Kai'Sa -> "kaisa" both sides), but a few are
+# renamed entirely and need an explicit alias.
+_CHAMPION_NAME_ALIASES = {
+    "wukong": "monkeyking",
+    "nunuwillump": "nunu",
+    "renataglasc": "renata",
+}
+
+
+def _normalize_champion_name(name: Any) -> str:
+    """Canonical key for cross-source champion-name comparison.
+
+    The match_history table stores Riot's championName (e.g. "Kaisa", "MonkeyKing");
+    champion_pools stores whatever the user typed (e.g. "Kai'sa", "Wukong"). This
+    function maps both forms to the same key so accountability/coverage lookups
+    join correctly. Display strings are unchanged -- only the lookup key is normalized.
+    """
+    if not name:
+        return ""
+    text = str(name)
+    key = "".join(ch.lower() for ch in text if ch.isalnum())
+    return _CHAMPION_NAME_ALIASES.get(key, key)
+
 
 # Hour (local time) at which the week resets on the configured weekday.
 WEEK_RESET_HOUR = 16
@@ -709,10 +735,13 @@ async def get_accountability_check(
     )
     all_weekly = weekly_result.scalars().all()
 
-    # Build lookup: {(player_name, champion_name): game_count}
+    # Build lookup: {(player_name, normalized_champion_key): game_count}.
+    # Normalize both sides because match_history holds Riot IDs ("Kaisa") while
+    # champion_pools holds user-typed display names ("Kai'sa") -- exact-string
+    # comparison would silently miss those games.
     played_counts: dict[tuple[str, str], int] = {}
     for row in all_weekly:
-        key = (row.player_name, row.champion_name)
+        key = (row.player_name, _normalize_champion_name(row.champion_name))
         played_counts[key] = played_counts.get(key, 0) + 1
 
     # Assemble results in Python — no more per-champion DB round-trips
@@ -736,7 +765,9 @@ async def get_accountability_check(
         champion_details = []
 
         for champion_name in champions:
-            games_played = played_counts.get((player, champion_name), 0)
+            games_played = played_counts.get(
+                (player, _normalize_champion_name(champion_name)), 0
+            )
             has_played = games_played > 0
 
             if not has_played:
@@ -1044,7 +1075,7 @@ async def get_pool_coverage(
                 "played_champs": set()
             }
         player_stats[p.player_name]["pool_size"] += 1
-        player_stats[p.player_name]["pool_champs"].add(p.champion_name)
+        player_stats[p.player_name]["pool_champs"].add(_normalize_champion_name(p.champion_name))
 
     qry = select(models.WeeklyChampion).where(
         models.WeeklyChampion.week_start_date == week_start,
@@ -1055,7 +1086,7 @@ async def get_pool_coverage(
 
     for row in played_rows:
         if row.player_name in player_stats:
-            player_stats[row.player_name]["played_champs"].add(row.champion_name)
+            player_stats[row.player_name]["played_champs"].add(_normalize_champion_name(row.champion_name))
 
     # Calculate coverage
     results = []
@@ -1495,6 +1526,7 @@ async def sync_player_games(
                 queue_id=game.queue_id,
                 team_puuids=list(game.team_puuids),
                 user_excluded=False,
+                is_remake=game.is_remake,
             )
             db.add(existing)
             existing_by_id[game.riot_match_id] = existing
@@ -1504,6 +1536,7 @@ async def sync_player_games(
             team_puuids=game.team_puuids,
             excluded_puuids=excluded_puuids,
             user_excluded=bool(existing.user_excluded),
+            is_remake=bool(existing.is_remake),
         )
 
         if not verdict.counts:
@@ -1792,6 +1825,7 @@ async def full_sync_player_games(
                 queue_id=game.queue_id,
                 team_puuids=list(game.team_puuids),
                 user_excluded=False,
+                is_remake=game.is_remake,
             )
             db.add(existing)
             existing_by_id[game.riot_match_id] = existing
@@ -1801,6 +1835,7 @@ async def full_sync_player_games(
             team_puuids=game.team_puuids,
             excluded_puuids=excluded_puuids,
             user_excluded=bool(existing.user_excluded),
+            is_remake=bool(existing.is_remake),
         )
 
         if not verdict.counts:

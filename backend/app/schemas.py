@@ -264,6 +264,7 @@ class MatchHistoryBase(BaseModel):
     week_start_date: date
     queue_id: int = 420
     user_excluded: bool = False
+    is_remake: bool = False
 
 
 class MatchHistory(MatchHistoryBase):
