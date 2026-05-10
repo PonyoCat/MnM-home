@@ -182,6 +182,66 @@ async def get_configured_week_start(
     )
     return week_start
 
+
+def _get_week_start_for_datetime(
+    dt: datetime,
+    week_start_weekday: int,
+    reset_hour: int = WEEK_RESET_HOUR,
+) -> date:
+    """Return week label for an absolute moment in time.
+
+    Mirrors the real-time path of _get_week_start_for_weekday: applies the
+    reset_hour cutoff to dt's clock instead of `now`. dt is treated naively
+    against the server clock (Render runs UTC; Riot's gameStartTimestamp is
+    epoch ms which datetime.fromtimestamp produces as naive local = UTC there).
+    """
+    dt_date = dt.date()
+    if dt_date.weekday() == week_start_weekday and dt.hour >= reset_hour:
+        reference_date = dt_date
+    else:
+        reference_date = dt_date - timedelta(days=1)
+    days_back = (reference_date.weekday() - week_start_weekday + 7) % 7
+    return reference_date - timedelta(days=days_back)
+
+
+async def get_configured_week_start_for_datetime(
+    db: AsyncSession,
+    dt: datetime,
+) -> date:
+    """Return the week label for an exact moment, using DB-configured rules.
+
+    Used so each persisted game can be filed against the week active at the
+    moment it was played, regardless of when the sync run captures it. If the
+    weekday or reset hour ever changes, this stays correct because it shares
+    the same config source as get_configured_week_start.
+    """
+    target_date = dt.date()
+    weekday = await get_week_start_weekday_for_date(db, target_date)
+    week_start = _get_week_start_for_datetime(dt, weekday)
+    try:
+        result = await db.execute(
+            select(models.WeekResetConfig).where(
+                models.WeekResetConfig.effective_from_date <= target_date,
+                or_(
+                    models.WeekResetConfig.effective_to_date.is_(None),
+                    models.WeekResetConfig.effective_to_date >= target_date,
+                ),
+            ).order_by(models.WeekResetConfig.effective_from_date.desc())
+        )
+        rule = result.scalars().first()
+    except SQLAlchemyError:
+        await db.rollback()
+        rule = None
+    # Pre-rule overlap fallback: if the natural week boundary lands before this
+    # rule existed, fall back to the prior rule's week boundary (mirrors
+    # get_configured_week_start's recursion).
+    if rule and week_start < rule.effective_from_date:
+        return await get_configured_week_start(
+            db, rule.effective_from_date - timedelta(days=1)
+        )
+    return week_start
+
+
 # Session Review CRUD
 async def get_session_review(db: AsyncSession) -> models.SessionReview:
     """Get the single session review record"""
@@ -1254,13 +1314,17 @@ async def get_match_history_for_week(
 async def get_existing_match_ids(
     db: AsyncSession,
     player_name: str,
-    week_start: date,
 ) -> Set[str]:
-    """Return the set of riot_match_ids already stored for this player+week."""
+    """Return the set of all riot_match_ids already stored for a player.
+
+    Spans every week. The unique constraint uq_player_match is week-agnostic,
+    so dedup must be too -- otherwise a game stored under one week label can be
+    re-fetched and re-INSERTed under a different label, hitting the constraint
+    and rolling back the whole player's sync.
+    """
     result = await db.execute(
         select(models.MatchHistory.riot_match_id).where(
             models.MatchHistory.player_name == player_name,
-            models.MatchHistory.week_start_date == week_start,
         )
     )
     return set(result.scalars().all())
@@ -1488,7 +1552,10 @@ async def sync_player_games(
     excluded_puuids = frozenset(f.puuid for f in excluded_friends if f.puuid)
 
     # 3. Load known match IDs from DB so we can skip fetching their details.
-    known_ids = await get_existing_match_ids(db, player_name, target_week_start)
+    #    Cross-week: a game played close to the reset cutoff can be stored under
+    #    the previous week's label. The unique constraint is week-agnostic, so
+    #    the dedup set must span all weeks for this player.
+    known_ids = await get_existing_match_ids(db, player_name)
 
     # 4. Fetch only new games from Riot API (detail calls skipped for known IDs).
     games: List[RiotMatchData] = await riot_client.fetch_player_games(
@@ -1507,6 +1574,13 @@ async def sync_player_games(
         existing = existing_by_id.get(game.riot_match_id)
 
         if existing is None:
+            # Derive week_start from when the game was played, not from the
+            # sync run's target_week_start. A game finishing seconds before the
+            # reset cutoff but synced seconds after must still land in the
+            # outgoing week.
+            game_week_start = await get_configured_week_start_for_datetime(
+                db, game.game_start_time
+            )
             existing = models.MatchHistory(
                 player_name=player_name,
                 riot_match_id=game.riot_match_id,
@@ -1522,7 +1596,7 @@ async def sync_player_games(
                 game_duration_seconds=game.game_duration_seconds,
                 team_position=game.team_position,
                 game_start_time=game.game_start_time,
-                week_start_date=target_week_start,
+                week_start_date=game_week_start,
                 queue_id=game.queue_id,
                 team_puuids=list(game.team_puuids),
                 user_excluded=False,
